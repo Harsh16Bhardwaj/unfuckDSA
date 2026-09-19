@@ -3,13 +3,18 @@ import Link from "next/link";
 import {
   ArrowDown,
   ArrowUpRight,
+  BookOpen,
   BrainCircuit,
+  CalendarClock,
   CalendarRange,
   CheckCircle2,
+  Database,
   Download,
+  Grip,
   LockKeyhole,
   MousePointer2,
   MonitorDown,
+  SlidersHorizontal,
   TimerReset,
 } from "lucide-react";
 import styles from "./landing.module.css";
@@ -21,6 +26,51 @@ const installSteps = [
   "Open chrome://extensions or edge://extensions.",
   "Turn on Developer mode, then choose Load unpacked.",
   "Select the extracted folder and open a LeetCode problem.",
+];
+
+const featureCards = [
+  {
+    icon: TimerReset,
+    label: "Session memory",
+    title: "A timer that remembers.",
+    body: "Refresh or close the browser. Active time, pauses and the current problem recover without rebuilding the session.",
+    tone: "coral",
+  },
+  {
+    icon: BookOpen,
+    label: "Problem library",
+    title: "Every attempt stays attached.",
+    body: "Approaches, blockers, hints, code versions and review history stay on one canonical problem instead of becoming duplicates.",
+    tone: "purple",
+  },
+  {
+    icon: CalendarClock,
+    label: "Capacity planning",
+    title: "Your calendar knows the difference.",
+    body: "DSA, development and busy hours remain separate, so recall work only lands where it actually belongs.",
+    tone: "lime",
+  },
+  {
+    icon: Grip,
+    label: "Weekly tasks",
+    title: "Drag recurring work into place.",
+    body: "Create one- or multi-hour commitments, drag them into the week, and reject collisions before they break the plan.",
+    tone: "blue",
+  },
+  {
+    icon: SlidersHorizontal,
+    label: "Human control",
+    title: "The algorithm never traps you.",
+    body: "Move, shorten, reschedule, prioritize or remove work while keeping the reason behind each recommendation visible.",
+    tone: "yellow",
+  },
+  {
+    icon: Database,
+    label: "Private workspace",
+    title: "Explicit capture. Your account.",
+    body: "No profile crawling or submission interception. Editor content is captured only when you deliberately end a session.",
+    tone: "dark",
+  },
 ];
 
 export default function HomePage() {
@@ -107,8 +157,16 @@ export default function HomePage() {
         </a>
       </section>
 
+      <nav className={styles.sectionNav} aria-label="Jump through the product tour">
+        <a href="#capture"><span>01</span> Capture</a>
+        <a href="#retain"><span>02</span> Retain</a>
+        <a href="#plan"><span>03</span> Plan</a>
+        <a href="#features"><span>+</span> Everything else</a>
+        <a href="#extension"><Download size={14} /> Get extension</a>
+      </nav>
+
       <section className={styles.stack} id="how-it-works">
-        <article className={`${styles.storyCard} ${styles.captureCard}`}>
+        <article className={`${styles.storyCard} ${styles.captureCard}`} id="capture">
           <div className={styles.storyCopy}>
             <span className={styles.storyNumber}>01 / Capture</span>
             <h2>The tracker lives where the work happens.</h2>
@@ -133,7 +191,7 @@ export default function HomePage() {
           </div>
         </article>
 
-        <article className={`${styles.storyCard} ${styles.retainCard}`}>
+        <article className={`${styles.storyCard} ${styles.retainCard}`} id="retain">
           <div className={styles.storyCopy}>
             <span className={styles.storyNumber}>02 / Retain</span>
             <h2>A revision queue that has a reason.</h2>
@@ -161,7 +219,7 @@ export default function HomePage() {
           </div>
         </article>
 
-        <article className={`${styles.storyCard} ${styles.planCard}`}>
+        <article className={`${styles.storyCard} ${styles.planCard}`} id="plan">
           <div className={styles.storyCopy}>
             <span className={styles.storyNumber}>03 / Plan</span>
             <h2>Your real week, not an imaginary schedule.</h2>
@@ -188,6 +246,32 @@ export default function HomePage() {
             <div className={styles.taskPill}><CalendarRange size={16} /><b>HLD round</b><span>×2</span></div>
           </div>
         </article>
+      </section>
+
+      <section className={styles.featureSection} id="features">
+        <div className={styles.featureHeading}>
+          <div>
+            <p className={styles.darkKicker}>Built around the messy parts</p>
+            <h2>Small decisions, handled properly.</h2>
+          </div>
+          <p>
+            The main loop is simple. The details underneath it are not—and those
+            details are what keep a revision system usable after the first week.
+          </p>
+        </div>
+        <div className={styles.featureGrid}>
+          {featureCards.map(({ icon: Icon, label, title, body, tone }, index) => (
+            <article className={`${styles.featureCard} ${styles[tone]}`} key={title}>
+              <div className={styles.featureTop}>
+                <span><Icon size={20} /></span>
+                <b>0{index + 1}</b>
+              </div>
+              <small>{label}</small>
+              <h3>{title}</h3>
+              <p>{body}</p>
+            </article>
+          ))}
+        </div>
       </section>
 
       <section className={styles.downloadSection} id="extension">
