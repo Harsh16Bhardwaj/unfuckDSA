@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "unfuckDSA Companion",
+  "version": "0.3.0",
+  "description": "An on-page LeetCode timer with explicit editor-buffer capture.",
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "host_permissions": ["https://leetcode.com/problems/*", "http://localhost:3000/*", "https://*.vercel.app/*"],
+  "action": {
+    "default_title": "unfuckDSA Companion",
+    "default_popup": "popup.html",
+    "default_icon": "sprout-pet.png"
+  },
+  "icons": {
+    "16": "sprout-pet.png",
+    "32": "sprout-pet.png",
+    "48": "sprout-pet.png",
+    "128": "sprout-pet.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sprout-pet.png"],
+      "matches": ["https://leetcode.com/*"]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://leetcode.com/problems/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.vercel.app/*", "http://localhost:3000/*"],
+      "js": ["app-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

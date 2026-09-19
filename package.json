@@ -1,25 +1,37 @@
 {
-  "name": "unfuck-dsa-scaffold",
+  "name": "unfuck-dsa",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "extension:build": "node extension/build.mjs"
   },
   "dependencies": {
+    "lucide-react": "1.47.0",
+    "mongodb": "^6.20.0",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "4.1.11"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/chrome": "0.1.36",
+    "@types/node": "22.20.3",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "5.0.1"
   }
 }
