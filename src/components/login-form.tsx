@@ -4,6 +4,7 @@ import { ArrowRight, AtSign, LockKeyhole, ShieldCheck, Sparkles, UserRound } fro
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import ThemeToggle from "./theme-toggle";
 
 export default function LoginForm({ mode }: { mode: "login" | "signup" }) {
   const router = useRouter();
@@ -37,6 +38,7 @@ export default function LoginForm({ mode }: { mode: "login" | "signup" }) {
 
   return (
     <main className="auth-page">
+      <ThemeToggle className="auth-theme-toggle" />
       <section className="auth-story"><div className="auth-glow one" /><div className="auth-glow two" /><div className="brand-mark">uD</div><span className="eyebrow accent">Recall before rust</span><h1>Your practice deserves a <em>memory.</em></h1><p>One focused home for LeetCode sessions, spaced revision and the work you promise yourself each week.</p><div className="auth-points"><span><ShieldCheck size={16} /> Your own private workspace</span><span><LockKeyhole size={16} /> Passwords are salted and hashed</span><span><Sparkles size={16} /> Built for daily use, not admin work</span></div></section>
       <form className="auth-card" onSubmit={submit}>
         <div className="auth-tabs"><Link className={mode === "login" ? "active" : ""} href="/login">Sign in</Link><Link className={mode === "signup" ? "active" : ""} href="/signup">Create account</Link></div>

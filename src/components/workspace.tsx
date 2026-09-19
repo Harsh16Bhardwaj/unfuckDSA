@@ -27,6 +27,7 @@ import type { AppState, Difficulty, Priority, Problem, ScheduleTemplate, Session
 import { createSchedule, recommendRevisionMinutes } from "@/lib/scheduler";
 import { CalendarView, ProblemsView, SettingsView, WeeklyTasksView } from "./workspace-views";
 import { SproutCompanion } from "./sprout-companion";
+import ThemeToggle from "./theme-toggle";
 
 type View = "today" | "calendar" | "problems" | "weekly-tasks" | "settings";
 type CapturedSession = { title: string; url: string; activeMinutes: number; code?: string; captureId?: string; startedAt?: number };
@@ -241,7 +242,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     </aside>
     {menuOpen && <button className="sidebar-scrim" onClick={() => setMenuOpen(false)} aria-label="Close menu" />}
     <main className="main-area">
-      <header className="topbar"><button className="icon-button menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu size={20} /></button><div><span className="eyebrow">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</span><h1>{NAV_ITEMS.find((item) => item.id === view)?.label}</h1></div></header>
+      <header className="topbar"><button className="icon-button menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu size={20} /></button><div><span className="eyebrow">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</span><h1>{NAV_ITEMS.find((item) => item.id === view)?.label}</h1></div><div className="top-actions"><ThemeToggle /></div></header>
       <div className="view-content">
         {view === "today" && <TodayView state={state} todayPlan={todayPlan} todayMinutes={todayMinutes} todayCount={todaySessions.length} weekCount={weekSessions.length} referenceNow={now.getTime()} onNavigate={setView} onReplan={() => setState((current) => replan(current))} onRemovePlan={(id) => updateState((current) => ({ ...current, scheduled: current.scheduled.filter((item) => item.id !== id) }))} onReschedulePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) rescheduleProblem(item.problemId); }} />}
         {view === "calendar" && <CalendarView state={state} updateState={updateState} />}

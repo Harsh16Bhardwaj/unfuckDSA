@@ -18,7 +18,7 @@ import {
   TimerReset,
 } from "lucide-react";
 import styles from "./landing.module.css";
-import LandingThemeToggle from "@/components/landing-theme-toggle";
+import ThemeToggle from "@/components/theme-toggle";
 
 const DOWNLOAD_PATH = "/downloads/unfuckdsa-extension.zip";
 
@@ -87,7 +87,7 @@ export default function HomePage() {
           <a href="#extension">Extension</a>
         </div>
         <div className={styles.authLinks}>
-          <LandingThemeToggle />
+          <ThemeToggle className={styles.landingThemeToggle} />
           <Link href="/login">Sign in</Link>
           <Link className={styles.navCta} href="/signup">
             Start free <ArrowUpRight size={15} />
