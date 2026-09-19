@@ -22,13 +22,14 @@ export default function LoginForm({ mode }: { mode: "login" | "signup" }) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(mode === "signup" ? { email: identity, password, username } : { identity, password }),
+        signal: AbortSignal.timeout(12_000),
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? (mode === "signup" ? "Sign-up failed." : "Sign-in failed."));
       router.push("/");
       router.refresh();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Something went wrong.");
+      setMessage(error instanceof DOMException && error.name === "TimeoutError" ? "The account server took too long to respond. Check MongoDB Atlas Network Access and try again." : error instanceof Error ? error.message : "Something went wrong.");
     } finally {
       setBusy(false);
     }
