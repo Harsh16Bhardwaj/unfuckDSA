@@ -32,7 +32,7 @@
   });
   byId("openAppButton").addEventListener("click", () => {
     const appUrl = byId("appUrl").value.replace(/\/$/, "");
-    void chrome.tabs.create({ url: appUrl });
+    void chrome.tabs.create({ url: `${appUrl}/dashboard` });
   });
   byId("pairButton").addEventListener("click", async () => {
     const appUrl = byId("appUrl").value.replace(/\/$/, "");

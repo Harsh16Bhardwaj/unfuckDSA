@@ -1,6 +1,10 @@
 # unfuckDSA
 
-A private, recall-first LeetCode revision system. The extension stays on LeetCode all day; the website is a lightweight planning and revision dashboard opened once or twice a day.
+A recall-first LeetCode revision system. The extension stays on LeetCode all day; the website is a lightweight planning and revision dashboard opened once or twice a day.
+
+- `/` — public product home, feature guide and extension download
+- `/dashboard` — authenticated revision workspace
+- `/login` and `/signup` — account entry
 
 ## What is included
 
@@ -28,6 +32,12 @@ Requirements: Node.js 22.12 or newer and a MongoDB connection string.
 Without `MONGODB_URI`, account creation and workspace storage intentionally remain unavailable.
 
 ## Extension
+
+### Install the ready-to-use build
+
+Download `public/downloads/unfuckdsa-extension.zip` from the product homepage, extract it, then continue at step 2 below. The ZIP contains only the runtime files needed by the browser.
+
+### Build it yourself
 
 1. Run `npm run extension:build`.
 2. Open `chrome://extensions` or `edge://extensions`.

@@ -45,7 +45,7 @@ byId<HTMLButtonElement>("saveUrlButton").addEventListener("click", async () => {
 
 byId<HTMLButtonElement>("openAppButton").addEventListener("click", () => {
   const appUrl = byId<HTMLInputElement>("appUrl").value.replace(/\/$/, "");
-  void chrome.tabs.create({ url: appUrl });
+  void chrome.tabs.create({ url: `${appUrl}/dashboard` });
 });
 
 byId<HTMLButtonElement>("pairButton").addEventListener("click", async () => {

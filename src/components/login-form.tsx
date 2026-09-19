@@ -26,7 +26,7 @@ export default function LoginForm({ mode }: { mode: "login" | "signup" }) {
       });
       const result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? (mode === "signup" ? "Sign-up failed." : "Sign-in failed."));
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof DOMException && error.name === "TimeoutError" ? "The account server took too long to respond. Check MongoDB Atlas Network Access and try again." : error instanceof Error ? error.message : "Something went wrong.");

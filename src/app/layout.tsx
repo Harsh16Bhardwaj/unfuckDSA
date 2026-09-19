@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "unfuckDSA · Recall before rust",
-  description: "An adaptive, evidence-driven LeetCode revision system.",
+  title: "unfuckDSA — Make solved problems stick",
+  description:
+    "An on-page LeetCode tracker and adaptive revision planner built for long-term recall.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
