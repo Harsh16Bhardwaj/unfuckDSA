@@ -71,6 +71,7 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
     setHistoryCounts({undo:undoStack.current.length,redo:redoStack.current.length});
   }
   const [weekOffset, setWeekOffset] = useState(0);
+  const [mobileDayIndex, setMobileDayIndex] = useState(() => (new Date().getDay() + 6) % 7);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
@@ -83,6 +84,8 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
   const weekStart = addDays(new Date(), weekOffset * 7);
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
+  const mobileDay = days[mobileDayIndex];
+  const mobileDayKey = isoDay(mobileDay);
   const slotMap = new Map(state.slots.map((slot) => [slot.id.replace(/^slot-/, ""), slot]));
   const taskMap = new Map((state.weeklyTasks ?? []).map((task) => [task.id, task]));
   const placementCellMap = useMemo(() => {
@@ -159,6 +162,10 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
   }
 
   function onTaskDragStart(event: DragEvent<HTMLButtonElement>, taskId: string) {
+    if (window.matchMedia("(max-width: 700px)").matches) {
+      event.preventDefault();
+      return;
+    }
     setMovingPlacementId(null);
     setMovingSlotKey(null);
     event.dataTransfer.effectAllowed = "copy";
@@ -206,6 +213,14 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
       keys.forEach((key) => remove ? next.delete(key) : next.add(key));
       return next;
     });
+  }
+
+  function toggleHourForCurrentView(hour: number) {
+    if (window.matchMedia("(max-width: 700px)").matches) {
+      toggleCell(`${mobileDayKey}-${String(hour).padStart(2, "0")}`);
+      return;
+    }
+    toggleHour(hour);
   }
 
   function selectDayPreset(preset: "weekdays" | "all" | "clear") {
@@ -262,11 +277,44 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
 
   function changeWeek(offset: number) {
     setWeekOffset(offset);
+    setMobileDayIndex(offset === 0 ? (new Date().getDay() + 6) % 7 : 0);
     setSelectedCells(new Set());
     setSelectedDays(new Set());
     setMovingSlotKey(null);
     setMovingPlacementId(null);
     setCalendarNotice('');
+  }
+
+  function changeMobileDay(direction: -1 | 1) {
+    const next = mobileDayIndex + direction;
+    if (next < 0) {
+      setWeekOffset((current) => current - 1);
+      setMobileDayIndex(6);
+    } else if (next > 6) {
+      setWeekOffset((current) => current + 1);
+      setMobileDayIndex(0);
+    } else {
+      setMobileDayIndex(next);
+    }
+    setSelectedCells(new Set());
+    setMovingSlotKey(null);
+    setMovingPlacementId(null);
+    setCalendarNotice('');
+  }
+
+  function activateCell(key: string, slot: CalendarSlot | undefined, placed: { placementId: string; taskId: string; first: boolean } | undefined) {
+    if (movingSlotKey && !slot && !placed) {
+      moveHour(movingSlotKey, key);
+      return;
+    }
+    if (placed) {
+      setMovingSlotKey(null);
+      setMovingPlacementId(placed.placementId);
+      return;
+    }
+    if (movingPlacement) placeTask(movingPlacement.taskId, key);
+    else if (selectedTaskId) placeTask(selectedTaskId, key);
+    else toggleCell(key);
   }
 
   return (
@@ -277,6 +325,16 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
       <div className="page-intro compact-intro calendar-title-row">
         <div><h2>Plan your week.</h2></div>
         <div className="calendar-controls"><button className="icon-button" onClick={() => changeWeek(weekOffset - 1)} aria-label="Previous week"><ChevronLeft size={18} /></button><button className="secondary-button compact" onClick={() => changeWeek(0)}>This week</button><button className="icon-button" onClick={() => changeWeek(weekOffset + 1)} aria-label="Next week"><ChevronRight size={18} /></button></div>
+      </div>
+
+      <div className="mobile-day-picker panel">
+        <button className="icon-button" onClick={() => changeMobileDay(-1)} aria-label="Previous day"><ChevronLeft size={20} /></button>
+        <button className={`mobile-day-label ${selectedDays.has(mobileDayKey) ? "selected" : ""}`} onClick={() => toggleDay(mobileDayKey)} aria-pressed={selectedDays.has(mobileDayKey)}>
+          <span>{mobileDay.toLocaleDateString([], { weekday: "long" })}</span>
+          <strong>{mobileDay.toLocaleDateString([], { day: "numeric", month: "long" })}</strong>
+          <small>{state.sprintDays?.[mobileDayKey] ?? (selectedDays.has(mobileDayKey) ? "selected for emphasis" : "tap to select the day")}</small>
+        </button>
+        <button className="icon-button" onClick={() => changeMobileDay(1)} aria-label="Next day"><ChevronRight size={20} /></button>
       </div>
 
       <div className="calendar-toolbox panel">
@@ -312,9 +370,9 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
         <div className="calendar-body">
           {STUDY_HOURS.map((hour) => (
             <div className="calendar-row" key={hour}>
-              <button className="hour-label" onClick={() => toggleHour(hour)} aria-label={`Select ${hourLabel(hour)} across this week`}>{hourLabel(hour)}</button>
+              <button className="hour-label" onClick={() => toggleHourForCurrentView(hour)} aria-label={`Select ${hourLabel(hour)}`}>{hourLabel(hour)}</button>
               <div className="calendar-days">
-                {days.map((day) => {
+                {days.map((day, dayIndex) => {
                   const key = `${isoDay(day)}-${String(hour).padStart(2, "0")}`;
                   const slot = slotMap.get(key);
                   const selected = selectedCells.has(key);
@@ -322,7 +380,7 @@ export function CalendarView({ state, updateState: persistState }: { state: AppS
                   const placedTask = placed ? taskMap.get(placed.taskId) : undefined;
                   const preview = activeTask && hoveredCell ? placementKeys(activeTask.id, hoveredCell)?.keys.includes(key) : false;
                   const invalidPreview = Boolean(activeTask && hoveredCell === key && !placementKeys(activeTask.id, key));
-                  return <button draggable={Boolean(placed || slot)} onDragStart={(event)=>{paintMode.current=null;if(slot){setMovingPlacementId(null);setMovingSlotKey(key);event.dataTransfer.setData("text/plain","availability:"+key);event.dataTransfer.effectAllowed="move";return;}if(!placed)return;setMovingSlotKey(null);setMovingPlacementId(placed.placementId);setDraggingTaskId(placed.taskId);event.dataTransfer.setData("text/plain",placed.taskId);event.dataTransfer.effectAllowed="move";}} onDragEnd={()=>{setDraggingTaskId(null);setHoveredCell(null);}} key={key} title={placedTask?.title} className={`calendar-cell ${placed ? "weekly-placed" : slot?.kind ?? "empty"} ${placed?.first ? "weekly-start" : ""} ${placed && !placed.first ? "weekly-continuation" : ""} ${selected ? "selected" : ""} ${preview ? "drop-preview" : ""} ${invalidPreview ? "drop-invalid" : ""}`} style={placedTask ? { "--task-color": placedTask.color } as React.CSSProperties : undefined} onPointerDown={(event) => { if(movingSlotKey && !slot && !placed){event.preventDefault();moveHour(movingSlotKey,key);return;} if(placed){setMovingSlotKey(null);setMovingPlacementId(placed.placementId);return;} if(!slot)event.preventDefault(); if(movingPlacement) placeTask(movingPlacement.taskId,key); else if (selectedTaskId) placeTask(selectedTaskId, key); else beginPainting(key); }} onPointerEnter={() => { if (draggingTaskId || movingPlacement) setHoveredCell(key); else paintCell(key); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = movingPlacementId || movingSlotKey ? "move" : "copy"; setHoveredCell(key); }} onDragLeave={() => setHoveredCell((current) => current === key ? null : current)} onDrop={(event) => { event.preventDefault(); const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId; if(taskId?.startsWith("availability:")) moveHour(taskId.slice(13),key); else if (taskId) placeTask(taskId, key); setDraggingTaskId(null); }} aria-pressed={selected} aria-label={`${day.toLocaleDateString([], { weekday: "long" })} ${hourLabel(hour)} ${placedTask?.title ?? slot?.kind ?? "unallocated"}`}><span>{placed ? (placed.first ? placedTask?.title : "") : slot?.kind === "dsa" ? "DSA" : slot?.kind === "dev" ? "DEV" : slot?.kind === "busy" ? "BUSY" : ""}</span></button>;
+                  return <button draggable={Boolean(placed || slot)} onDragStart={(event)=>{if(window.matchMedia("(max-width: 700px)").matches){event.preventDefault();return;}paintMode.current=null;if(slot){setMovingPlacementId(null);setMovingSlotKey(key);event.dataTransfer.setData("text/plain","availability:"+key);event.dataTransfer.effectAllowed="move";return;}if(!placed)return;setMovingSlotKey(null);setMovingPlacementId(placed.placementId);setDraggingTaskId(placed.taskId);event.dataTransfer.setData("text/plain",placed.taskId);event.dataTransfer.effectAllowed="move";}} onDragEnd={()=>{setDraggingTaskId(null);setHoveredCell(null);}} key={key} title={placedTask?.title} className={`calendar-cell ${dayIndex === mobileDayIndex ? "mobile-active" : "mobile-inactive"} ${placed ? "weekly-placed" : slot?.kind ?? "empty"} ${placed?.first ? "weekly-start" : ""} ${placed && !placed.first ? "weekly-continuation" : ""} ${selected ? "selected" : ""} ${preview ? "drop-preview" : ""} ${invalidPreview ? "drop-invalid" : ""}`} style={placedTask ? { "--task-color": placedTask.color } as React.CSSProperties : undefined} onPointerDown={(event) => { if(event.pointerType !== "mouse") return; if(movingSlotKey && !slot && !placed){event.preventDefault();moveHour(movingSlotKey,key);return;} if(placed){setMovingSlotKey(null);setMovingPlacementId(placed.placementId);return;} if(!slot)event.preventDefault(); if(movingPlacement) placeTask(movingPlacement.taskId,key); else if (selectedTaskId) placeTask(selectedTaskId, key); else beginPainting(key); }} onClick={(event) => { if (event.detail === 0 || window.matchMedia("(max-width: 700px)").matches) activateCell(key, slot, placed); }} onPointerEnter={(event) => { if(event.pointerType !== "mouse") return; if (draggingTaskId || movingPlacement) setHoveredCell(key); else paintCell(key); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = movingPlacementId || movingSlotKey ? "move" : "copy"; setHoveredCell(key); }} onDragLeave={() => setHoveredCell((current) => current === key ? null : current)} onDrop={(event) => { event.preventDefault(); const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId; if(taskId?.startsWith("availability:")) moveHour(taskId.slice(13),key); else if (taskId) placeTask(taskId, key); setDraggingTaskId(null); }} aria-pressed={selected} aria-label={`${day.toLocaleDateString([], { weekday: "long" })} ${hourLabel(hour)} ${placedTask?.title ?? slot?.kind ?? "unallocated"}`}><span>{placed ? (placed.first ? placedTask?.title : "") : slot?.kind === "dsa" ? "DSA" : slot?.kind === "dev" ? "DEV" : slot?.kind === "busy" ? "BUSY" : ""}</span></button>;
                 })}
               </div>
             </div>

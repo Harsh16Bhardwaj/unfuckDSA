@@ -10,21 +10,16 @@ const THEME_EVENT = "unfuckdsa-theme-change";
 function getThemeSnapshot() {
   const savedTheme = window.localStorage.getItem(STORAGE_KEY)
     ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
-  return savedTheme
-    ? savedTheme === "dark"
-    : window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return savedTheme === "dark";
 }
 
 function subscribeToTheme(callback: () => void) {
-  const media = window.matchMedia("(prefers-color-scheme: dark)");
   window.addEventListener(THEME_EVENT, callback);
   window.addEventListener("storage", callback);
-  media.addEventListener("change", callback);
 
   return () => {
     window.removeEventListener(THEME_EVENT, callback);
     window.removeEventListener("storage", callback);
-    media.removeEventListener("change", callback);
   };
 }
 
