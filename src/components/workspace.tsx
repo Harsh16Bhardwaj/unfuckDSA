@@ -24,7 +24,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createInitialState } from "@/lib/demo-data";
 import type { AppState, Difficulty, Priority, Problem, ScheduleTemplate, SessionStatus } from "@/lib/domain";
-import { createSchedule, nextIntervalDays, recommendRevisionMinutes } from "@/lib/scheduler";
+import { createSchedule, recommendRevisionMinutes } from "@/lib/scheduler";
+import { completeRevision as completeRevisionState } from "@/lib/revisions";
 import { CalendarView, ProblemsView, SettingsView, WeeklyTasksView } from "./workspace-views";
 import { SproutCompanion } from "./sprout-companion";
 import ThemeToggle from "./theme-toggle";
@@ -217,62 +218,9 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
 
   function completeRevision(problemId: string, scheduledId?: string) {
     const completedAt = new Date();
-    updateState((current) => {
-      const problem = current.problems.find((item) => item.id === problemId);
-      if (!problem) return current;
-      const planned = scheduledId
-        ? current.scheduled.find((item) => item.id === scheduledId)
-        : current.scheduled.find(
-            (item) => item.problemId === problemId && item.status === "planned",
-          );
-      const intervalDays = nextIntervalDays(
-        problem.reviewStage,
-        "good",
-        problem.scheduleTemplate,
-        problem.customIntervals,
-      );
-      const nextDue = new Date(completedAt);
-      nextDue.setDate(nextDue.getDate() + intervalDays);
-      nextDue.setHours(10, 0, 0, 0);
-      return {
-        ...current,
-        problems: current.problems.map((item) =>
-          item.id === problemId
-            ? {
-                ...item,
-                reviewStage: item.reviewStage + 1,
-                lastOutcome: "good",
-                dueAt: nextDue.toISOString(),
-              }
-            : item,
-        ),
-        reviews: [
-          {
-            id: crypto.randomUUID(),
-            problemId,
-            completedAt: completedAt.toISOString(),
-            outcome: "good",
-            activeMinutes: planned?.minutes ?? problem.revisionMinutes,
-            hintRevealed: false,
-            approachRevealed: false,
-            rubric: {
-              recognition: 3,
-              invariant: 3,
-              implementation: 3,
-              complexity: 3,
-              edgeCases: 3,
-              explanation: 3,
-            },
-          },
-          ...current.reviews,
-        ],
-        scheduled: current.scheduled.map((item) =>
-          item.id === (scheduledId ?? planned?.id)
-            ? { ...item, status: "completed" as const }
-            : item,
-        ),
-      };
-    });
+    updateState((current) =>
+      completeRevisionState(current, problemId, scheduledId, completedAt),
+    );
   }
 
   async function signOut() {

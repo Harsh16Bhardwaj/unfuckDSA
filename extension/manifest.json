@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "unfuckDSA Companion",
-  "version": "0.3.0",
-  "description": "An on-page LeetCode timer with explicit editor-buffer capture.",
+  "version": "0.4.0",
+  "description": "An on-page LeetCode timer and cloud-synced revision queue.",
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
-  "host_permissions": ["https://leetcode.com/problems/*", "http://localhost:3000/*", "https://*.vercel.app/*"],
+  "host_permissions": ["https://leetcode.com/problems/*", "https://leetcode.com/problemset/*", "http://localhost:3000/*", "https://*.vercel.app/*"],
   "action": {
     "default_title": "unfuckDSA Companion",
     "default_popup": "popup.html",
@@ -29,6 +29,11 @@
     {
       "matches": ["https://leetcode.com/problems/*"],
       "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://leetcode.com/problemset/*"],
+      "js": ["problemset.js"],
       "run_at": "document_idle"
     },
     {

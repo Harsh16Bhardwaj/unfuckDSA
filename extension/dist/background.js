@@ -50,11 +50,50 @@
     });
     return typeof result?.result === "string" ? result.result : "";
   }
+  async function revisionRequest(state, path, init) {
+    if (!state.token)
+      throw new Error("Pair the extension from its toolbar popup first.");
+    const response = await fetch(`${state.appUrl}${path}`, {
+      ...init,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${state.token}`,
+        ...init?.headers
+      }
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error ?? "Revision sync failed.");
+    return result;
+  }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     void (async () => {
       const state = await readState();
       if (message.type === "TRACKER_STATE") {
         respond({ ok: true, state });
+        return;
+      }
+      if (message.type === "GET_TODAY_REVISIONS") {
+        const params = new URLSearchParams({
+          date: message.date,
+          timezoneOffset: String(message.timezoneOffset)
+        });
+        const result = await revisionRequest(
+          state,
+          `/api/extension/revisions?${params}`
+        );
+        respond({ ok: true, revisions: result.revisions ?? [] });
+        return;
+      }
+      if (message.type === "COMPLETE_REVISION") {
+        await revisionRequest(state, "/api/extension/revisions", {
+          method: "POST",
+          body: JSON.stringify({
+            scheduleId: message.scheduleId,
+            completedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            outcome: "good"
+          })
+        });
+        respond({ ok: true });
         return;
       }
       const now = Date.now();
