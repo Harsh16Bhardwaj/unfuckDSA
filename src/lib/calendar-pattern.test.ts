@@ -9,16 +9,48 @@ import {
 describe("calendar availability", () => {
   it("copies whole task bookings within weekly limits and preserves destination sprint choices", () => {
     const state = createInitialState();
-    state.weeklyTasks=[{id:'t',title:'HLD',durationHours:2,sessionsPerWeek:2,color:'#fff',createdAt:'2026-09-14'}];
-    state.weeklyTaskPlacements=[{id:'old',taskId:'t',dayKey:'2026-09-14',startHour:12,durationHours:2}];
-    state.sprintDays={'2026-09-14':'solve','2026-09-21':'recall'};
-    const copied=copyPreviousWeek(state,new Date('2026-09-21T00:00:00'));
+    state.weeklyTasks = [
+      {
+        id: "t",
+        title: "HLD",
+        durationHours: 2,
+        sessionsPerWeek: 2,
+        color: "#fff",
+        createdAt: "2026-09-14",
+      },
+    ];
+    state.weeklyTaskPlacements = [
+      {
+        id: "old",
+        taskId: "t",
+        dayKey: "2026-09-14",
+        startHour: 12,
+        durationHours: 2,
+      },
+    ];
+    state.sprintDays = { "2026-09-14": "solve", "2026-09-21": "recall" };
+    const now = new Date("2026-09-20T09:00:00");
+    const copied = copyPreviousWeek(
+      state,
+      new Date("2026-09-21T00:00:00"),
+      now,
+    );
     expect(copied.weeklyTaskPlacements).toHaveLength(2);
-    expect(copied.weeklyTaskPlacements[1]).toMatchObject({dayKey:'2026-09-21',startHour:12,durationHours:2});
-    expect(copied.sprintDays['2026-09-21']).toBe('recall');
-    expect(copyPreviousWeek(copied,new Date('2026-09-21T00:00:00')).weeklyTaskPlacements).toHaveLength(2);
-    const blocked={...state,slots:[makeSlot('2026-09-21-13','busy')]};
-    expect(copyPreviousWeek(blocked,new Date('2026-09-21T00:00:00')).weeklyTaskPlacements).toHaveLength(1);
+    expect(copied.weeklyTaskPlacements[1]).toMatchObject({
+      dayKey: "2026-09-21",
+      startHour: 12,
+      durationHours: 2,
+    });
+    expect(copied.sprintDays["2026-09-21"]).toBe("recall");
+    expect(
+      copyPreviousWeek(copied, new Date("2026-09-21T00:00:00"), now)
+        .weeklyTaskPlacements,
+    ).toHaveLength(2);
+    const blocked = { ...state, slots: [makeSlot("2026-09-21-13", "busy")] };
+    expect(
+      copyPreviousWeek(blocked, new Date("2026-09-21T00:00:00"), now)
+        .weeklyTaskPlacements,
+    ).toHaveLength(1);
   });
   it("moves an hour atomically, rejects occupied targets, and prevents its recurring source from reappearing", () => {
     const state = createInitialState();
@@ -29,13 +61,20 @@ describe("calendar availability", () => {
     state.recurringAvailability = [
       { weekday: 1, hour: 10, kind: "dsa", startsOn: "2026-09-21" },
     ];
-    expect(moveAvailability(state, "2026-09-21-10", "2026-09-21-12")).toBe(
+    const now = new Date("2026-09-20T09:00:00").getTime();
+    expect(moveAvailability(state, "2026-09-21-10", "2026-09-21-12", now)).toBe(
       state,
     );
-    const moved = moveAvailability(state, "2026-09-21-10", "2026-09-21-11");
+    const moved = moveAvailability(
+      state,
+      "2026-09-21-10",
+      "2026-09-21-11",
+      now,
+    );
     expect(moved.slots[0].id).toBe("slot-2026-09-21-11");
     expect(
-      materializeAvailability(moved, new Date("2026-09-21T00:00:00"), 1).slots,
+      materializeAvailability(moved, new Date("2026-09-21T00:00:00"), 1, now)
+        .slots,
     ).toEqual(moved.slots);
   });
   it("copies the previous week without overwriting bookings or occupied hours, including after midnight", () => {
@@ -55,7 +94,12 @@ describe("calendar availability", () => {
         durationHours: 2,
       },
     ];
-    const result = copyPreviousWeek(state, new Date("2026-09-21T00:00:00"));
+    const now = new Date("2026-09-20T09:00:00");
+    const result = copyPreviousWeek(
+      state,
+      new Date("2026-09-21T00:00:00"),
+      now,
+    );
     expect(result.slots.find((s) => s.id === "slot-2026-09-21-10")?.kind).toBe(
       "busy",
     );
@@ -64,7 +108,7 @@ describe("calendar availability", () => {
       "dsa",
     );
     expect(
-      copyPreviousWeek(result, new Date("2026-09-21T00:00:00")).slots,
+      copyPreviousWeek(result, new Date("2026-09-21T00:00:00"), now).slots,
     ).toEqual(result.slots);
   });
   it("repeats by weekday while respecting starts, exceptions and task bookings", () => {
@@ -86,6 +130,7 @@ describe("calendar availability", () => {
       state,
       new Date("2026-09-14T00:00:00"),
       36,
+      new Date("2026-09-20T09:00:00").getTime(),
     );
     expect(result.slots.map((s) => s.id)).toEqual([
       "slot-2026-09-21-10",
@@ -93,7 +138,46 @@ describe("calendar availability", () => {
       "slot-2026-10-19-10",
     ]);
     expect(
-      materializeAvailability(result, new Date("2026-09-14T00:00:00"), 36),
+      materializeAvailability(
+        result,
+        new Date("2026-09-14T00:00:00"),
+        36,
+        new Date("2026-09-20T09:00:00").getTime(),
+      ),
     ).toBe(result);
+  });
+  it("locks historical availability, recurrence and copied work", () => {
+    const now = new Date("2026-09-20T15:30:00");
+    const state = createInitialState();
+    state.slots = [makeSlot("2026-09-20-14", "dsa")];
+    state.recurringAvailability = [
+      { weekday: 0, hour: 13, kind: "dsa", startsOn: "2026-09-20" },
+    ];
+    expect(
+      moveAvailability(state, "2026-09-20-14", "2026-09-20-16", now.getTime()),
+    ).toBe(state);
+    expect(
+      materializeAvailability(
+        state,
+        new Date("2026-09-20T00:00:00"),
+        1,
+        now.getTime(),
+      ).slots,
+    ).toHaveLength(1);
+    const source = createInitialState();
+    source.slots = [
+      makeSlot("2026-09-13-14", "dsa"),
+      makeSlot("2026-09-13-16", "dev"),
+    ];
+    const copied = copyPreviousWeek(
+      source,
+      new Date("2026-09-14T00:00:00"),
+      now,
+    );
+    expect(copied.slots.map((slot) => slot.id)).toEqual([
+      "slot-2026-09-13-14",
+      "slot-2026-09-13-16",
+      "slot-2026-09-20-16",
+    ]);
   });
 });
