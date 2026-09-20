@@ -13,8 +13,6 @@ import {
   Clock3,
   Eraser,
   ExternalLink,
-  Eye,
-  EyeOff,
   KeyRound,
   Lightbulb,
   LogOut,
@@ -29,6 +27,10 @@ import {
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { AppState, CalendarSlot, Problem, SlotKind, SprintKind } from "@/lib/domain";
 import { getWeeklyTaskPlacement, WEEKLY_TASK_HOURS } from "@/lib/weekly-tasks";
+import { copyPreviousWeek, materializeAvailability, occupiedTaskCells, moveAvailability } from "@/lib/calendar-pattern";
+import { ProblemHistory } from './problem-history';
+import { ChangePassword } from './change-password';
+import { createSchedule } from '@/lib/scheduler';
 
 type UpdateState = (recipe: (current: AppState) => AppState, shouldReplan?: boolean) => void;
 
@@ -46,7 +48,28 @@ function hourLabel(hour: number) {
   return new Date(2020, 1, 1, normalized).toLocaleTimeString([], { hour: "numeric" });
 }
 
-export function CalendarView({ state, updateState }: { state: AppState; updateState: UpdateState }) {
+export function CalendarView({ state, updateState: persistState }: { state: AppState; updateState: UpdateState }) {
+  type Snapshot = Pick<AppState, 'slots' | 'weeklyTaskPlacements' | 'sprintDays' | 'recurringAvailability' | 'availabilityExceptions'>;
+  const undoStack = useRef<Snapshot[]>([]);
+  const redoStack = useRef<Snapshot[]>([]);
+  const [historyCounts, setHistoryCounts] = useState({undo:0,redo:0});
+  const [calendarNotice, setCalendarNotice] = useState('');
+  const snapshot = (value: AppState): Snapshot => ({slots:value.slots,weeklyTaskPlacements:value.weeklyTaskPlacements,sprintDays:value.sprintDays,recurringAvailability:value.recurringAvailability,availabilityExceptions:value.availabilityExceptions});
+  const updateState: UpdateState = (recipe, replan) => {
+    undoStack.current = [...undoStack.current.slice(-49), snapshot(state)];
+    redoStack.current = [];
+    persistState(recipe, replan);
+    setHistoryCounts({undo:undoStack.current.length,redo:redoStack.current.length});
+  };
+  function travelHistory(redo: boolean) {
+    const source = redo ? redoStack : undoStack;
+    const target = redo ? undoStack : redoStack;
+    const previous = source.current.pop();
+    if (!previous) return;
+    target.current.push(snapshot(state));
+    persistState(current => {const restored={...current,...previous};return {...restored,scheduled:createSchedule({problems:restored.problems,slots:restored.slots,mode:restored.dayMode,manualRecallBlocks:restored.manualRecallBlocks})};});
+    setHistoryCounts({undo:undoStack.current.length,redo:redoStack.current.length});
+  }
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [selectedDays, setSelectedDays] = useState<Set<string>>(new Set());
@@ -54,6 +77,8 @@ export function CalendarView({ state, updateState }: { state: AppState; updateSt
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
   const [invalidTaskId, setInvalidTaskId] = useState<string | null>(null);
+  const [movingPlacementId, setMovingPlacementId] = useState<string | null>(null);
+  const [movingSlotKey, setMovingSlotKey] = useState<string | null>(null);
   const paintMode = useRef<"select" | "remove" | null>(null);
   const weekStart = addDays(new Date(), weekOffset * 7);
   weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
@@ -72,18 +97,38 @@ export function CalendarView({ state, updateState }: { state: AppState; updateSt
   const displayedDays = new Set(days.map(isoDay));
   const displayedCounts = new Map<string, number>();
   for (const placement of state.weeklyTaskPlacements ?? []) if (displayedDays.has(placement.dayKey)) displayedCounts.set(placement.taskId, (displayedCounts.get(placement.taskId) ?? 0) + 1);
-  const activeTask = taskMap.get(draggingTaskId ?? selectedTaskId ?? "");
+  const movingPlacement = state.weeklyTaskPlacements.find(p=>p.id===movingPlacementId);
+  const activeTask = taskMap.get(movingPlacement?.taskId ?? draggingTaskId ?? selectedTaskId ?? "");
+  const displayedStart = isoDay(days[0]);
+  useEffect(() => {
+    persistState(current => materializeAvailability(current, new Date(`${displayedStart}T00:00:00`), 21), true);
+  }, [displayedStart, persistState]);
+
+  function repeatSelection() {
+    const selected = state.slots.filter(slot => selectedCells.has(slot.id.slice(5)));
+    if (!selected.length) {setCalendarNotice('Select painted hours first.');return;}
+    updateState(current => {
+      const patterns = new Map((current.recurringAvailability ?? []).map(p=>[`${p.weekday}-${p.hour}`,p]));
+      for(const slot of selected) {
+        const key=slot.id.slice(5);const day=key.slice(0,-3);const weekday=new Date(`${day}T00:00:00`).getDay();const hour=Number(key.slice(-2));
+        patterns.set(`${weekday}-${hour}`,{weekday,hour,kind:slot.kind,startsOn:day});
+      }
+      return materializeAvailability({...current,recurringAvailability:[...patterns.values()]}, days[0],21);
+    },true);
+    setCalendarNotice(`${selected.length} hours repeat weekly. Existing bookings are preserved.`);
+  }
 
   function placementKeys(taskId: string, startKey: string) {
     const task = taskMap.get(taskId);
     if (!task) return null;
-    const occupied = new Set([...slotMap.keys(), ...placementCellMap.keys()]);
+    const occupied = new Set([...slotMap.keys(), ...[...placementCellMap].filter(([,p])=>p.placementId!==movingPlacementId).map(([key])=>key)]);
     const placement = getWeeklyTaskPlacement(task, startKey, occupied);
     return placement ? { ...placement, day: placement.dayKey, task } : null;
   }
 
   function rejectPlacement(taskId: string) {
     setInvalidTaskId(taskId);
+    setCalendarNotice('That session needs consecutive empty hours within this day.');
     window.setTimeout(() => setInvalidTaskId((current) => current === taskId ? null : current), 520);
   }
 
@@ -91,19 +136,21 @@ export function CalendarView({ state, updateState }: { state: AppState; updateSt
     const placement = placementKeys(taskId, startKey);
     if (!placement) return rejectPlacement(taskId);
     const placedCount = displayedCounts.get(taskId) ?? 0;
-    if (placedCount >= placement.task.sessionsPerWeek) return rejectPlacement(taskId);
+    if (!movingPlacement && placedCount >= placement.task.sessionsPerWeek) return rejectPlacement(taskId);
     updateState((current) => {
       const currentTask = (current.weeklyTasks ?? []).find((task) => task.id === taskId);
       if (!currentTask) return current;
       const currentWeekDays = new Set(days.map(isoDay));
-      const currentCount = (current.weeklyTaskPlacements ?? []).filter((item) => item.taskId === taskId && currentWeekDays.has(item.dayKey)).length;
+      const retained = current.weeklyTaskPlacements.filter(item=>item.id!==movingPlacementId);
+      const currentCount = retained.filter((item) => item.taskId === taskId && currentWeekDays.has(item.dayKey)).length;
       const occupied = new Set(current.slots.map((slot) => slot.id.replace(/^slot-/, "")));
-      for (const item of current.weeklyTaskPlacements ?? []) for (let offset = 0; offset < item.durationHours; offset += 1) occupied.add(`${item.dayKey}-${String(item.startHour + offset).padStart(2, "0")}`);
+      for (const item of retained) for (let offset = 0; offset < item.durationHours; offset += 1) occupied.add(`${item.dayKey}-${String(item.startHour + offset).padStart(2, "0")}`);
       const checked = getWeeklyTaskPlacement(currentTask, startKey, occupied);
       if (!checked || currentCount >= currentTask.sessionsPerWeek) return current;
-      return { ...current, weeklyTaskPlacements: [...(current.weeklyTaskPlacements ?? []), { id: crypto.randomUUID(), taskId, dayKey: checked.dayKey, startHour: checked.startHour, durationHours: currentTask.durationHours }] };
+      return { ...current, weeklyTaskPlacements: [...retained, { id: movingPlacementId ?? crypto.randomUUID(), taskId, dayKey: checked.dayKey, startHour: checked.startHour, durationHours: currentTask.durationHours }] };
     });
     setSelectedTaskId(null);
+    setMovingPlacementId(null);
     setHoveredCell(null);
   }
 
@@ -112,6 +159,8 @@ export function CalendarView({ state, updateState }: { state: AppState; updateSt
   }
 
   function onTaskDragStart(event: DragEvent<HTMLButtonElement>, taskId: string) {
+    setMovingPlacementId(null);
+    setMovingSlotKey(null);
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("text/plain", taskId);
     setDraggingTaskId(taskId);
@@ -174,16 +223,19 @@ export function CalendarView({ state, updateState }: { state: AppState; updateSt
 
   function applyCells(kind?: SlotKind) {
     updateState((current) => {
-      const untouched = current.slots.filter((slot) => !selectedCells.has(slot.id.replace(/^slot-/, "")));
-      if (!kind) return { ...current, slots: untouched };
-      const additions: CalendarSlot[] = [...selectedCells].map((key) => {
+      const occupied = occupiedTaskCells(current);
+      const editableCells = new Set([...selectedCells].filter(key=>!occupied.has(key)));
+      const untouched = current.slots.filter((slot) => !editableCells.has(slot.id.replace(/^slot-/, "")));
+      const availabilityExceptions = [...new Set([...(current.availabilityExceptions ?? []), ...editableCells])];
+      if (!kind) return { ...current, slots: untouched, availabilityExceptions };
+      const additions: CalendarSlot[] = [...editableCells].map((key) => {
         const hour = Number(key.slice(-2));
         const dayKey = key.slice(0, -3);
         const startsAt = new Date(`${dayKey}T00:00:00`);
         startsAt.setHours(hour, 0, 0, 0);
         return { id: `slot-${key}`, startsAt: startsAt.toISOString(), kind };
       });
-      return { ...current, slots: [...untouched, ...additions] };
+      return { ...current, slots: [...untouched, ...additions], availabilityExceptions };
     }, true);
     setSelectedCells(new Set());
   }
@@ -200,11 +252,31 @@ export function CalendarView({ state, updateState }: { state: AppState; updateSt
     setSelectedDays(new Set());
   }
 
+  function moveHour(source: string, target: string) {
+    if (moveAvailability(state,source,target)===state) {setCalendarNotice('Choose an empty hour to move this block.');return;}
+    updateState(current=>moveAvailability(current,source,target),true);
+    setMovingSlotKey(null);
+    setSelectedCells(new Set());
+    setCalendarNotice('Hour moved. Undo is available.');
+  }
+
+  function changeWeek(offset: number) {
+    setWeekOffset(offset);
+    setSelectedCells(new Set());
+    setSelectedDays(new Set());
+    setMovingSlotKey(null);
+    setMovingPlacementId(null);
+    setCalendarNotice('');
+  }
+
   return (
     <div className="page-stack calendar-page">
+      {movingSlotKey && <div className="calendar-tools" role="status"><span>Choose an empty hour for this block.</span><button className="text-button" onClick={()=>setMovingSlotKey(null)}>Cancel move</button></div>}
+      {movingPlacement && <div className="calendar-tools" role="status"><span>{taskMap.get(movingPlacement.taskId)?.title}: choose a new start hour</span><button className="text-button" onClick={()=>setMovingPlacementId(null)}>Cancel move</button><button className="text-button" onClick={()=>{removePlacement(movingPlacement.id);setMovingPlacementId(null);}}>Remove booking</button></div>}
+      <div className="calendar-tools"><button className="secondary-button compact" disabled={!historyCounts.undo} onClick={()=>travelHistory(false)}>Undo</button><button className="secondary-button compact" disabled={!historyCounts.redo} onClick={()=>travelHistory(true)}>Redo</button><button className="secondary-button compact" onClick={()=>{updateState(current=>copyPreviousWeek(current,days[0]),true);setCalendarNotice('Last week’s availability copied into empty hours.');}}>Copy last week</button><button className="secondary-button compact" disabled={!selectedCells.size} onClick={repeatSelection}>Repeat selected weekly</button>{!!state.recurringAvailability?.length && <button className="text-button" onClick={()=>{updateState(current=>({...current,recurringAvailability:[]}));setCalendarNotice('Weekly repetition stopped. Existing hours kept.');}}>Stop repeating</button>}<span role="status">{calendarNotice}</span></div>
       <div className="page-intro compact-intro calendar-title-row">
         <div><h2>Plan your week.</h2></div>
-        <div className="calendar-controls"><button className="icon-button" onClick={() => setWeekOffset((value) => value - 1)} aria-label="Previous week"><ChevronLeft size={18} /></button><button className="secondary-button compact" onClick={() => setWeekOffset(0)}>This week</button><button className="icon-button" onClick={() => setWeekOffset((value) => value + 1)} aria-label="Next week"><ChevronRight size={18} /></button></div>
+        <div className="calendar-controls"><button className="icon-button" onClick={() => changeWeek(weekOffset - 1)} aria-label="Previous week"><ChevronLeft size={18} /></button><button className="secondary-button compact" onClick={() => changeWeek(0)}>This week</button><button className="icon-button" onClick={() => changeWeek(weekOffset + 1)} aria-label="Next week"><ChevronRight size={18} /></button></div>
       </div>
 
       <div className="calendar-toolbox panel">
@@ -250,7 +322,7 @@ export function CalendarView({ state, updateState }: { state: AppState; updateSt
                   const placedTask = placed ? taskMap.get(placed.taskId) : undefined;
                   const preview = activeTask && hoveredCell ? placementKeys(activeTask.id, hoveredCell)?.keys.includes(key) : false;
                   const invalidPreview = Boolean(activeTask && hoveredCell === key && !placementKeys(activeTask.id, key));
-                  return <button key={key} title={placedTask?.title} className={`calendar-cell ${placed ? "weekly-placed" : slot?.kind ?? "empty"} ${placed?.first ? "weekly-start" : ""} ${placed && !placed.first ? "weekly-continuation" : ""} ${selected ? "selected" : ""} ${preview ? "drop-preview" : ""} ${invalidPreview ? "drop-invalid" : ""}`} style={placedTask ? { "--task-color": placedTask.color } as React.CSSProperties : undefined} onPointerDown={(event) => { event.preventDefault(); if (placed) removePlacement(placed.placementId); else if (selectedTaskId) placeTask(selectedTaskId, key); else beginPainting(key); }} onPointerEnter={() => { if (draggingTaskId) setHoveredCell(key); else paintCell(key); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setHoveredCell(key); }} onDragLeave={() => setHoveredCell((current) => current === key ? null : current)} onDrop={(event) => { event.preventDefault(); const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId; if (taskId) placeTask(taskId, key); setDraggingTaskId(null); }} aria-pressed={selected} aria-label={`${day.toLocaleDateString([], { weekday: "long" })} ${hourLabel(hour)} ${placedTask?.title ?? slot?.kind ?? "unallocated"}`}><span>{placed ? (placed.first ? placedTask?.title : "") : slot?.kind === "dsa" ? "DSA" : slot?.kind === "dev" ? "DEV" : slot?.kind === "busy" ? "BUSY" : ""}</span></button>;
+                  return <button draggable={Boolean(placed || slot)} onDragStart={(event)=>{paintMode.current=null;if(slot){setMovingPlacementId(null);setMovingSlotKey(key);event.dataTransfer.setData("text/plain","availability:"+key);event.dataTransfer.effectAllowed="move";return;}if(!placed)return;setMovingSlotKey(null);setMovingPlacementId(placed.placementId);setDraggingTaskId(placed.taskId);event.dataTransfer.setData("text/plain",placed.taskId);event.dataTransfer.effectAllowed="move";}} onDragEnd={()=>{setDraggingTaskId(null);setHoveredCell(null);}} key={key} title={placedTask?.title} className={`calendar-cell ${placed ? "weekly-placed" : slot?.kind ?? "empty"} ${placed?.first ? "weekly-start" : ""} ${placed && !placed.first ? "weekly-continuation" : ""} ${selected ? "selected" : ""} ${preview ? "drop-preview" : ""} ${invalidPreview ? "drop-invalid" : ""}`} style={placedTask ? { "--task-color": placedTask.color } as React.CSSProperties : undefined} onPointerDown={(event) => { if(movingSlotKey && !slot && !placed){event.preventDefault();moveHour(movingSlotKey,key);return;} if(placed){setMovingSlotKey(null);setMovingPlacementId(placed.placementId);return;} if(!slot)event.preventDefault(); if(movingPlacement) placeTask(movingPlacement.taskId,key); else if (selectedTaskId) placeTask(selectedTaskId, key); else beginPainting(key); }} onPointerEnter={() => { if (draggingTaskId || movingPlacement) setHoveredCell(key); else paintCell(key); }} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setHoveredCell(key); }} onDragLeave={() => setHoveredCell((current) => current === key ? null : current)} onDrop={(event) => { event.preventDefault(); const taskId = event.dataTransfer.getData("text/plain") || draggingTaskId; if(taskId?.startsWith("availability:")) moveHour(taskId.slice(13),key); else if (taskId) placeTask(taskId, key); setDraggingTaskId(null); }} aria-pressed={selected} aria-label={`${day.toLocaleDateString([], { weekday: "long" })} ${hourLabel(hour)} ${placedTask?.title ?? slot?.kind ?? "unallocated"}`}><span>{placed ? (placed.first ? placedTask?.title : "") : slot?.kind === "dsa" ? "DSA" : slot?.kind === "dev" ? "DEV" : slot?.kind === "busy" ? "BUSY" : ""}</span></button>;
                 })}
               </div>
             </div>
@@ -301,11 +373,11 @@ export function WeeklyTasksView({ state, updateState, onOpenCalendar }: { state:
 
 type ProblemTab = "today" | "week" | "all";
 
-export function ProblemsView({ state, onAdd, onDelete, onReschedule }: { state: AppState; onAdd: () => void; onDelete: (id: string) => void; onReschedule: (id: string) => void }) {
+export function ProblemsView({ state, onAdd, onDelete, onReschedule, updateState }: { state: AppState; onAdd: () => void; onDelete: (id: string) => void; onReschedule: (id: string) => void; updateState: UpdateState }) {
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<ProblemTab>("today");
-  const [selected, setSelected] = useState<Problem | null>(null);
-  const [revealed, setRevealed] = useState(false);
+  const [selectedRecord, setSelected] = useState<Problem | null>(null);
+  const selected = state.problems.find(p=>p.id===selectedRecord?.id) ?? null;
   const today = new Date();
   const todayKeyValue = isoDay(today);
   const endOfWeek = addDays(today, 7).getTime();
@@ -325,7 +397,7 @@ export function ProblemsView({ state, onAdd, onDelete, onReschedule }: { state: 
       <div className="problem-layout">
         <section className="problem-list panel">
           {visible.map((problem) => <article className={`revision-row ${selected?.id === problem.id ? "selected" : ""}`} key={problem.id}>
-            <button className="revision-main" onClick={() => { setSelected(problem); setRevealed(false); }}>
+            <button className="revision-main" onClick={() => { setSelected(problem); }}>
               <i className={`difficulty ${problem.difficulty}`} />
               <div><strong>{problem.title}</strong><span>{problem.topics.join(" · ") || "Unclustered"} · {problem.revisionMinutes} min</span></div>
             </button>
@@ -336,7 +408,8 @@ export function ProblemsView({ state, onAdd, onDelete, onReschedule }: { state: 
           {!visible.length && <div className="empty-state"><BookOpen size={28} /><h4>{tab === "all" ? "No solved problems yet" : "Nothing scheduled here"}</h4><p>Your extension will populate this list as you finish LeetCode sessions.</p></div>}
         </section>
         <aside className="problem-detail panel">
-          {selected ? <><div className="detail-heading"><div><span className="eyebrow">Problem detail</span><h3>{selected.title}</h3></div>{selected.url && <a className="icon-button" href={selected.url} target="_blank" rel="noreferrer"><ExternalLink size={17} /></a>}</div><div className="detail-badges"><span>{selected.difficulty}</span><span>{selected.initialMinutes} min</span><span>{selected.reviewStage} reviews</span></div><div className="memory-box"><div><span className="eyebrow">Your approach</span><button className="text-button" onClick={() => setRevealed((value) => !value)}>{revealed ? <EyeOff size={14} /> : <Eye size={14} />}{revealed ? "Hide" : "Reveal"}</button></div><p className={revealed ? "" : "memory-hidden"}>{selected.approach || "No approach recorded."}</p></div><div className="memory-box hint"><span className="eyebrow">Future-you hint</span><p className={revealed ? "" : "memory-hidden"}>{selected.hint || "No hint recorded."}</p></div></> : <div className="empty-detail"><BookOpen size={30} /><h3>Select a question</h3><p>Its reflection and hidden recall aids appear here.</p></div>}
+          {selected && <ProblemHistory key={selected.id} problem={selected} state={state} onUpdate={updateState} />}
+          {!selected && <div className="empty-detail"><BookOpen size={30} /><h3>Select a question</h3><p>Its history and revision settings appear here.</p></div>}
         </aside>
       </div>
     </div>
@@ -359,6 +432,6 @@ export function SettingsView({ state, updateState, cloudEnabled, username, onSig
     <section className="panel settings-section"><div className="settings-icon"><KeyRound size={20} /></div><div className="settings-copy"><h3>LeetCode companion</h3><p>Timer placement is controlled in the extension popup: bottom-left, bottom-right or top-right. Local tracking remains available without cloud pairing.</p>{cloudEnabled ? <button className="secondary-button compact" onClick={generatePairingCode}>Generate pairing code</button> : <div className="status-line"><span className="status-ok" />Local sync active</div>}{pairCode && <code className="pairing-code">{pairCode}</code>}{pairError && <p className="auth-error">{pairError}</p>}</div></section>
     <section className="panel settings-section"><div className="settings-icon"><Database size={20} /></div><div className="settings-copy"><h3>Storage</h3><p>{cloudEnabled ? "Your authenticated workspace is stored in MongoDB under your account and synchronized across devices." : "Account storage is currently unavailable."}</p><div className="status-line"><span className={cloudEnabled ? "status-ok" : "status-warn"} />{cloudEnabled ? "MongoDB sync connected" : "Storage unavailable"}</div></div></section>
     <section className="panel settings-section"><div className="settings-icon"><ShieldCheck size={20} /></div><div className="settings-copy"><h3>Capture boundary</h3><p>No profile crawling or submission interception. Code is read only when you explicitly press End in the LeetCode overlay.</p><div className="status-line"><span className="status-ok" />User-triggered capture</div></div></section>
-    <section className="panel settings-section account-setting"><div className="settings-icon"><LogOut size={20} /></div><div className="settings-copy"><h3>{username}</h3><p>{cloudEnabled ? "Sign out on this browser. Your synchronized workspace remains stored." : "Cloud accounts are not configured on this deployment yet."}</p><button className="secondary-button compact" onClick={onSignOut}>{cloudEnabled ? "Sign out" : "Open sign in"}</button></div></section>
+    {cloudEnabled && <ChangePassword />}<section className="panel settings-section account-setting"><div className="settings-icon"><LogOut size={20} /></div><div className="settings-copy"><h3>{username}</h3><p>{cloudEnabled ? "Sign out on this browser. Your synchronized workspace remains stored." : "Cloud accounts are not configured on this deployment yet."}</p><button className="secondary-button compact" onClick={onSignOut}>{cloudEnabled ? "Sign out" : "Open sign in"}</button></div></section>
   </div></div>;
 }

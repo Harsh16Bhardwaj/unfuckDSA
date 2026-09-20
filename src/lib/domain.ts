@@ -39,6 +39,9 @@ export interface Problem {
 }
 
 export interface StudySession {
+  blocker?: string;
+  approach?: string;
+  hint?: string;
   id: string;
   problemId: string;
   startedAt: string;
@@ -93,6 +96,8 @@ export interface FocusSprint {
 }
 
 export interface ReviewAttempt {
+  code?: string;
+  blocker?: string;
   id: string;
   problemId: string;
   completedAt: string;
@@ -137,6 +142,9 @@ export interface WeeklyTaskPlacement {
 }
 
 export interface AppState {
+  recurringAvailability?: Array<{ weekday: number; hour: number; kind: SlotKind; startsOn: string }>;
+  availabilityExceptions?: string[];
+  revealEvents?: Array<{ id: string; problemId: string; at: string; kind: "hint" | "approach" }>;
   dailyTargetMinutes: number;
   dayMode: DayMode;
   manualRecallBlocks: number;

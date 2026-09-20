@@ -28,6 +28,7 @@ import { createSchedule, recommendRevisionMinutes } from "@/lib/scheduler";
 import { CalendarView, ProblemsView, SettingsView, WeeklyTasksView } from "./workspace-views";
 import { SproutCompanion } from "./sprout-companion";
 import ThemeToggle from "./theme-toggle";
+import { materializeAvailability, reconcileRecurringAvailability } from '@/lib/calendar-pattern';
 
 type View = "today" | "calendar" | "problems" | "weekly-tasks" | "settings";
 type CapturedSession = { title: string; url: string; activeMinutes: number; code?: string; captureId?: string; startedAt?: number };
@@ -67,7 +68,7 @@ function loadState(scope: string): AppState {
   try {
     const stored = window.localStorage.getItem(`${APP_KEY}-${scope}`);
     const parsed = stored ? JSON.parse(stored) as AppState : createInitialState();
-    return { ...parsed, dailyTargetMinutes: parsed.dailyTargetMinutes ?? 300, sprintDays: parsed.sprintDays ?? {}, weeklyTasks: parsed.weeklyTasks ?? [], weeklyTaskPlacements: parsed.weeklyTaskPlacements ?? [] };
+    return reconcileRecurringAvailability({ ...parsed, dailyTargetMinutes: parsed.dailyTargetMinutes ?? 300, sprintDays: parsed.sprintDays ?? {}, weeklyTasks: parsed.weeklyTasks ?? [], weeklyTaskPlacements: parsed.weeklyTaskPlacements ?? [] });
   } catch { return createInitialState(); }
 }
 
@@ -102,7 +103,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     if (!cloudEnabled) return;
     fetch("/api/workspace/state").then(async (response) => {
       const data = await response.json() as { workspace?: { state?: AppState } };
-      if (response.ok && data.workspace?.state) setState({ ...data.workspace.state, dailyTargetMinutes: data.workspace.state.dailyTargetMinutes ?? 300, sprintDays: data.workspace.state.sprintDays ?? {}, weeklyTasks: data.workspace.state.weeklyTasks ?? [], weeklyTaskPlacements: data.workspace.state.weeklyTaskPlacements ?? [] });
+      if (response.ok && data.workspace?.state) setState(reconcileRecurringAvailability({ ...data.workspace.state, dailyTargetMinutes: data.workspace.state.dailyTargetMinutes ?? 300, sprintDays: data.workspace.state.sprintDays ?? {}, weeklyTasks: data.workspace.state.weeklyTasks ?? [], weeklyTaskPlacements: data.workspace.state.weeklyTaskPlacements ?? [] }));
     }).finally(() => setCloudLoaded(true));
   }, [cloudEnabled]);
 
@@ -124,7 +125,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     }).catch(() => undefined);
   }, []);
 
-  const replan = useCallback((next: AppState) => ({ ...next, scheduled: createSchedule({ problems: next.problems, slots: next.slots, mode: next.dayMode, manualRecallBlocks: next.manualRecallBlocks }) }), []);
+  const replan = useCallback((value: AppState) => { const next = materializeAvailability(value); return { ...next, scheduled: createSchedule({ problems: next.problems, slots: next.slots, mode: next.dayMode, manualRecallBlocks: next.manualRecallBlocks }) }; }, []);
   const updateState = useCallback((recipe: (current: AppState) => AppState, shouldReplan = false) => setState((current) => { const next = recipe(current); return shouldReplan ? replan(next) : next; }), [replan]);
 
   useEffect(() => {
@@ -169,7 +170,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
             };
             next.problems = existing ? next.problems.map((item) => item.id === existing.id ? problem : item) : [problem, ...next.problems];
           }
-          next.sessions = [{ id: `extension-session-${record.id}`, problemId, startedAt: new Date(record.startedAt).toISOString(), endedAt: record.finishedAt, activeMinutes: record.activeMinutes, pausedMinutes: 0, status: record.status, code: record.code || undefined, idempotencyKey: `extension-local-${record.id}` }, ...next.sessions];
+          next.sessions = [{ id: `extension-session-${record.id}`, problemId, startedAt: new Date(record.startedAt).toISOString(), endedAt: record.finishedAt, activeMinutes: record.activeMinutes, pausedMinutes: 0, status: record.status, code: record.code || undefined, blocker:record.blocker, approach:record.approach, hint:record.hint, idempotencyKey: `extension-local-${record.id}` }, ...next.sessions];
         }
         return replan(next);
       });
@@ -201,7 +202,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     dueAt.setHours(10, 0, 0, 0);
     const recommended = recommendRevisionMinutes({ difficulty: result.difficulty, status: result.status, initialMinutes: capture.activeMinutes, priority: result.priority });
     const problem: Problem = { id, source: capture.url.includes("leetcode.com") ? "leetcode" : "manual", slug, title: capture.title, url: capture.url || undefined, topics: result.topics, difficulty: result.difficulty, priority: result.priority, revisionMinutes: result.revisionMinutes ?? recommended, scheduleTemplate: result.template, approach: result.approach, blocker: result.blocker, hint: result.hint, notes: result.notes, needsVisual: result.needsVisual, initialMinutes: existing?.initialMinutes || capture.activeMinutes, reviewStage: existing?.reviewStage ?? 0, dueAt: dueAt.toISOString(), status: result.status, revealCount: existing?.revealCount ?? 0, createdAt: existing?.createdAt ?? finishedAt.toISOString() };
-    updateState((current) => ({ ...current, problems: existing ? current.problems.map((item) => item.id === id ? problem : item) : [problem, ...current.problems], sessions: [{ id: crypto.randomUUID(), problemId: id, startedAt: new Date(capture.startedAt ?? finishedAt.getTime() - capture.activeMinutes * 60_000).toISOString(), endedAt: finishedAt.toISOString(), activeMinutes: capture.activeMinutes, pausedMinutes: 0, status: result.status, code: result.code || capture.code, idempotencyKey: capture.captureId ? `extension-${capture.captureId}` : `manual-${finishedAt.getTime()}` }, ...current.sessions] }), true);
+    updateState((current) => ({ ...current, problems: existing ? current.problems.map((item) => item.id === id ? problem : item) : [problem, ...current.problems], sessions: [{ id: crypto.randomUUID(), problemId: id, startedAt: new Date(capture.startedAt ?? finishedAt.getTime() - capture.activeMinutes * 60_000).toISOString(), endedAt: finishedAt.toISOString(), activeMinutes: capture.activeMinutes, pausedMinutes: 0, status: result.status, code: result.code || capture.code, blocker: result.blocker, approach: result.approach, hint: result.hint, idempotencyKey: capture.captureId ? `extension-${capture.captureId}` : `manual-${finishedAt.getTime()}` }, ...current.sessions] }), true);
     setCapture(null);
   }
 
@@ -246,7 +247,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
       <div className="view-content">
         {view === "today" && <TodayView state={state} todayPlan={todayPlan} todayMinutes={todayMinutes} todayCount={todaySessions.length} weekCount={weekSessions.length} referenceNow={now.getTime()} onNavigate={setView} onReplan={() => setState((current) => replan(current))} onRemovePlan={(id) => updateState((current) => ({ ...current, scheduled: current.scheduled.filter((item) => item.id !== id) }))} onReschedulePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) rescheduleProblem(item.problemId); }} />}
         {view === "calendar" && <CalendarView state={state} updateState={updateState} />}
-        {view === "problems" && <ProblemsView state={state} onAdd={() => setManualOpen(true)} onDelete={removeProblem} onReschedule={rescheduleProblem} />}
+        {view === "problems" && <ProblemsView state={state} onAdd={() => setManualOpen(true)} onDelete={removeProblem} onReschedule={rescheduleProblem} updateState={updateState} />}
         {view === "weekly-tasks" && <WeeklyTasksView state={state} updateState={updateState} onOpenCalendar={() => setView("calendar")} />}
         {view === "settings" && <SettingsView state={state} updateState={updateState} cloudEnabled={cloudEnabled} username={username} onSignOut={() => void signOut()} />}
       </div>
