@@ -1388,12 +1388,14 @@ type ProblemTab = "today" | "week" | "all";
 export function ProblemsView({
   state,
   onAdd,
+  onComplete,
   onDelete,
   onReschedule,
   updateState,
 }: {
   state: AppState;
   onAdd: () => void;
+  onComplete: (problemId: string, scheduledId?: string) => void;
   onDelete: (id: string) => void;
   onReschedule: (id: string) => void;
   updateState: UpdateState;
@@ -1499,6 +1501,23 @@ export function ProblemsView({
                   <ExternalLink size={17} />
                 </a>
               )}
+              <button
+                className="row-icon complete"
+                onClick={() =>
+                  onComplete(
+                    problem.id,
+                    state.scheduled.find(
+                      (item) =>
+                        item.problemId === problem.id &&
+                        item.status === "planned",
+                    )?.id,
+                  )
+                }
+                aria-label={`Mark ${problem.title} revised`}
+                title="Mark revised"
+              >
+                <CheckSquare2 size={17} />
+              </button>
               <button
                 className="row-icon reschedule"
                 onClick={() => onReschedule(problem.id)}

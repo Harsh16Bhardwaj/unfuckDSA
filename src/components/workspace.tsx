@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createInitialState } from "@/lib/demo-data";
 import type { AppState, Difficulty, Priority, Problem, ScheduleTemplate, SessionStatus } from "@/lib/domain";
-import { createSchedule, recommendRevisionMinutes } from "@/lib/scheduler";
+import { createSchedule, nextIntervalDays, recommendRevisionMinutes } from "@/lib/scheduler";
 import { CalendarView, ProblemsView, SettingsView, WeeklyTasksView } from "./workspace-views";
 import { SproutCompanion } from "./sprout-companion";
 import ThemeToggle from "./theme-toggle";
@@ -215,6 +215,66 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     updateState((current) => ({ ...current, problems: current.problems.map((problem) => problem.id === id ? { ...problem, dueAt: nextDue.toISOString() } : problem), scheduled: current.scheduled.filter((item) => item.problemId !== id) }), true);
   }
 
+  function completeRevision(problemId: string, scheduledId?: string) {
+    const completedAt = new Date();
+    updateState((current) => {
+      const problem = current.problems.find((item) => item.id === problemId);
+      if (!problem) return current;
+      const planned = scheduledId
+        ? current.scheduled.find((item) => item.id === scheduledId)
+        : current.scheduled.find(
+            (item) => item.problemId === problemId && item.status === "planned",
+          );
+      const intervalDays = nextIntervalDays(
+        problem.reviewStage,
+        "good",
+        problem.scheduleTemplate,
+        problem.customIntervals,
+      );
+      const nextDue = new Date(completedAt);
+      nextDue.setDate(nextDue.getDate() + intervalDays);
+      nextDue.setHours(10, 0, 0, 0);
+      return {
+        ...current,
+        problems: current.problems.map((item) =>
+          item.id === problemId
+            ? {
+                ...item,
+                reviewStage: item.reviewStage + 1,
+                lastOutcome: "good",
+                dueAt: nextDue.toISOString(),
+              }
+            : item,
+        ),
+        reviews: [
+          {
+            id: crypto.randomUUID(),
+            problemId,
+            completedAt: completedAt.toISOString(),
+            outcome: "good",
+            activeMinutes: planned?.minutes ?? problem.revisionMinutes,
+            hintRevealed: false,
+            approachRevealed: false,
+            rubric: {
+              recognition: 3,
+              invariant: 3,
+              implementation: 3,
+              complexity: 3,
+              edgeCases: 3,
+              explanation: 3,
+            },
+          },
+          ...current.reviews,
+        ],
+        scheduled: current.scheduled.map((item) =>
+          item.id === (scheduledId ?? planned?.id)
+            ? { ...item, status: "completed" as const }
+            : item,
+        ),
+      };
+    });
+  }
+
   async function signOut() {
     if (!cloudEnabled) {
       router.push("/login");
@@ -230,7 +290,9 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
   const weekStart = new Date(now); weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)); weekStart.setHours(0, 0, 0, 0);
   const todaySessions = state.sessions.filter((session) => dayKey(new Date(session.startedAt)) === today);
   const weekSessions = state.sessions.filter((session) => new Date(session.startedAt) >= weekStart);
-  const todayMinutes = todaySessions.reduce((sum, session) => sum + session.activeMinutes, 0);
+  const todayReviews = state.reviews.filter((review) => dayKey(new Date(review.completedAt)) === today);
+  const weekReviews = state.reviews.filter((review) => new Date(review.completedAt) >= weekStart);
+  const todayMinutes = [...todaySessions, ...todayReviews].reduce((sum, item) => sum + item.activeMinutes, 0);
   const todaySlotIds = new Set(state.slots.filter((slot) => dayKey(new Date(slot.startsAt)) === today).map((slot) => slot.id));
   const todayPlan = state.scheduled.filter((item) => todaySlotIds.has(item.slotId) && item.status === "planned");
 
@@ -245,9 +307,9 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     <main className="main-area">
       <header className="topbar"><button className="icon-button menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu size={20} /></button><div><span className="eyebrow">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</span><h1>{NAV_ITEMS.find((item) => item.id === view)?.label}</h1></div><div className="top-actions"><ThemeToggle /></div></header>
       <div className="view-content">
-        {view === "today" && <TodayView state={state} todayPlan={todayPlan} todayMinutes={todayMinutes} todayCount={todaySessions.length} weekCount={weekSessions.length} referenceNow={now.getTime()} onNavigate={setView} onReplan={() => setState((current) => replan(current))} onRemovePlan={(id) => updateState((current) => ({ ...current, scheduled: current.scheduled.filter((item) => item.id !== id) }))} onReschedulePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) rescheduleProblem(item.problemId); }} />}
+        {view === "today" && <TodayView state={state} todayPlan={todayPlan} todayMinutes={todayMinutes} todayCount={todaySessions.length + todayReviews.length} weekCount={weekSessions.length + weekReviews.length} referenceNow={now.getTime()} onNavigate={setView} onReplan={() => setState((current) => replan(current))} onCompletePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) completeRevision(item.problemId, item.id); }} onRemovePlan={(id) => updateState((current) => ({ ...current, scheduled: current.scheduled.filter((item) => item.id !== id) }))} onReschedulePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) rescheduleProblem(item.problemId); }} />}
         {view === "calendar" && <CalendarView state={state} updateState={updateState} />}
-        {view === "problems" && <ProblemsView state={state} onAdd={() => setManualOpen(true)} onDelete={removeProblem} onReschedule={rescheduleProblem} updateState={updateState} />}
+        {view === "problems" && <ProblemsView state={state} onAdd={() => setManualOpen(true)} onComplete={completeRevision} onDelete={removeProblem} onReschedule={rescheduleProblem} updateState={updateState} />}
         {view === "weekly-tasks" && <WeeklyTasksView state={state} updateState={updateState} onOpenCalendar={() => setView("calendar")} />}
         {view === "settings" && <SettingsView state={state} updateState={updateState} cloudEnabled={cloudEnabled} username={username} onSignOut={() => void signOut()} />}
       </div>
@@ -257,7 +319,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
   </div>;
 }
 
-function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, referenceNow, onNavigate, onReplan, onRemovePlan, onReschedulePlan }: { state: AppState; todayPlan: AppState["scheduled"]; todayMinutes: number; todayCount: number; weekCount: number; referenceNow: number; onNavigate: (view: View) => void; onReplan: () => void; onRemovePlan: (id: string) => void; onReschedulePlan: (id: string) => void }) {
+function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, referenceNow, onNavigate, onReplan, onCompletePlan, onRemovePlan, onReschedulePlan }: { state: AppState; todayPlan: AppState["scheduled"]; todayMinutes: number; todayCount: number; weekCount: number; referenceNow: number; onNavigate: (view: View) => void; onReplan: () => void; onCompletePlan: (id: string) => void; onRemovePlan: (id: string) => void; onReschedulePlan: (id: string) => void }) {
   const problemById = new Map(state.problems.map((problem) => [problem.id, problem]));
   const dailyAverage = Math.round(state.sessions.filter((session) => referenceNow - new Date(session.startedAt).getTime() <= 7 * 86_400_000).reduce((sum, session) => sum + session.activeMinutes, 0) / 7);
   const previousWeekCount = state.sessions.filter((session) => {
@@ -301,7 +363,7 @@ function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, refe
     <div className="today-workbench">
     <section className="today-queue panel">
       <div className="queue-heading"><div><span className="eyebrow">Revision set</span><h3>Questions for today</h3></div><button className="text-button" onClick={() => onNavigate("problems")}>See this week <ChevronRight size={15} /></button></div>
-      <div className="revision-list">{todayPlan.map((item) => { const problem = problemById.get(item.problemId); return <article key={item.id} className="today-revision"><div className="revision-status"><i /><span>{problem?.topics[0] ?? "Recall"}</span></div><div className="revision-copy"><strong>{problem?.title ?? "Revision"}</strong><span>{item.minutes} min · {item.reason[0] ?? "due today"}</span></div>{problem?.url && <a className="queue-action open" href={problem.url} target="_blank" rel="noreferrer" aria-label="Open on LeetCode"><ExternalLink size={18} /></a>}<button className="queue-action" onClick={() => onReschedulePlan(item.id)} aria-label="Reschedule"><CalendarClock size={18} /></button><button className="queue-action delete" onClick={() => onRemovePlan(item.id)} aria-label="Remove from today"><Trash2 size={18} /></button></article>; })}
+      <div className="revision-list">{todayPlan.map((item) => { const problem = problemById.get(item.problemId); return <article key={item.id} className="today-revision"><div className="revision-status"><i /><span>{problem?.topics[0] ?? "Recall"}</span></div><div className="revision-copy"><strong>{problem?.title ?? "Revision"}</strong><span>{item.minutes} min · {item.reason[0] ?? "due today"}</span></div><button className="queue-action complete" onClick={() => onCompletePlan(item.id)} aria-label={`Mark ${problem?.title ?? "revision"} revised`} title="Mark revised"><Check size={18} /></button>{problem?.url && <a className="queue-action open" href={problem.url} target="_blank" rel="noreferrer" aria-label="Open on LeetCode"><ExternalLink size={18} /></a>}<button className="queue-action" onClick={() => onReschedulePlan(item.id)} aria-label="Reschedule"><CalendarClock size={18} /></button><button className="queue-action delete" onClick={() => onRemovePlan(item.id)} aria-label="Remove from today"><Trash2 size={18} /></button></article>; })}
       {!todayPlan.length && <div className="queue-empty"><div className="empty-orbit"><Sparkles size={22} /></div><h4>Your revision set is empty.</h4><p>Finish a session from the LeetCode overlay or add a problem manually. It will appear here when due.</p><button className="secondary-button" onClick={() => onNavigate("problems")}><Plus size={16} /> Add manually</button></div>}</div>
     </section>
     <aside className="dashboard-rail">

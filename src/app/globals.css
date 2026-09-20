@@ -4826,6 +4826,10 @@ html[data-theme="dark"] .auth-notice {
   background: #312b19;
 }
 
+.queue-action.complete,.row-icon.complete{color:#2f7208;background:#efffd2;border-color:#bfe46a}
+.queue-action.complete:hover,.row-icon.complete:hover{color:#193f03;background:#dfff9a;border-color:#9dca36}
+html[data-theme="dark"] .queue-action.complete,html[data-theme="dark"] .row-icon.complete{color:#dfff9a;background:#26371a;border-color:#4b6928}
+
 @media (max-width: 620px) {
   .auth-theme-toggle {
     right: 14px;
