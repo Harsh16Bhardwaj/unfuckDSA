@@ -1934,6 +1934,11 @@ textarea {
     flex: 1;
   }
 }
+
+.pairing-card{padding:17px;border-color:#d8e6b2;background:linear-gradient(140deg,#fbfff1,#f2fadf)}
+.pairing-heading{display:flex;align-items:center;gap:10px}.pairing-heading>span:last-child{min-width:0}.pairing-heading strong,.pairing-heading small{display:block}.pairing-heading strong{font-size:12px}.pairing-heading small{margin-top:3px;color:var(--muted);font-size:9px}
+.pairing-key{width:100%;min-height:42px;margin-top:12px;padding:0 10px 0 13px;display:flex;align-items:center;justify-content:space-between;border:1px dashed #a8c85b;border-radius:11px;color:#324407;background:rgba(255,255,255,.72);cursor:pointer}.pairing-key code{font:800 13px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.08em}.pairing-key:disabled{cursor:wait;opacity:.62}.pairing-card>p{margin:9px 1px 0;color:var(--muted);font-size:9px;line-height:1.45}
+html[data-theme="dark"] .pairing-card{border-color:#405326;background:linear-gradient(140deg,#1c2417,#25321a)}html[data-theme="dark"] .pairing-key{color:#dfff9a;border-color:#5e7a31;background:#182013}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

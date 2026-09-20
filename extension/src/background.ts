@@ -94,6 +94,7 @@ async function readState(): Promise<StoredState> {
   return {
     ...DEFAULT_STATE,
     ...value,
+    appUrl: DEFAULT_STATE.appUrl,
     records: value.records ?? [],
     uiMode: value.uiMode ?? (value.timer?.status === "running" ? "minimal" : "expanded"),
   };
@@ -125,7 +126,7 @@ async function revisionRequest(
   init?: RequestInit,
 ) {
   if (!state.token)
-    throw new Error("Pair the extension from its toolbar popup first.");
+    throw new Error("Open the dashboard, copy your pairing key, then connect it in the extension popup.");
   const response = await fetch(`${state.appUrl}${path}`, {
     ...init,
     headers: {

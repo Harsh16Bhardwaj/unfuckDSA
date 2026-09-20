@@ -1586,17 +1586,9 @@ export function SettingsView({
 }) {
   const [pairCode, setPairCode] = useState("");
   const [pairError, setPairError] = useState("");
-  async function generatePairingCode() {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-      setPairError(
-        "Local extension sync is already active. Cloud pairing is optional and currently disabled.",
-      );
-      return;
-    }
+  async function loadPairingKey() {
     setPairError("");
-    const response = await fetch("/api/extension/pairing-code", {
-      method: "POST",
-    });
+    const response = await fetch("/api/extension/pairing-code");
     const data = (await response.json()) as { code?: string; error?: string };
     if (!response.ok || !data.code)
       setPairError(data.error ?? "Could not create a pairing code.");
@@ -1720,16 +1712,15 @@ export function SettingsView({
           <div className="settings-copy">
             <h3>LeetCode companion</h3>
             <p>
-              Timer placement is controlled in the extension popup: bottom-left,
-              bottom-right or top-right. Local tracking remains available
-              without cloud pairing.
+              Use the same reusable account key on every browser you want to
+              connect. Timer position stays in the extension popup.
             </p>
             {cloudEnabled ? (
               <button
                 className="secondary-button compact"
-                onClick={generatePairingCode}
+                onClick={loadPairingKey}
               >
-                Generate pairing code
+                Show pairing key
               </button>
             ) : (
               <div className="status-line">

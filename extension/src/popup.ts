@@ -1,7 +1,7 @@
 export {};
 
 type StoredState = {
-  appUrl: string;
+  appUrl?: string;
   token?: string;
   deviceId?: string;
   placement?: "bottom-left" | "bottom-right" | "top-right";
@@ -9,7 +9,8 @@ type StoredState = {
 };
 
 const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-let current: StoredState = { appUrl: "https://unfuck-dsa.vercel.app" };
+const APP_URL = "https://unfuck-dsa.vercel.app";
+let current: StoredState = { appUrl: APP_URL };
 
 function elapsed() {
   const timer = current.timer;
@@ -18,15 +19,19 @@ function elapsed() {
 }
 
 function render() {
-  byId<HTMLInputElement>("appUrl").value = current.appUrl;
   byId<HTMLSelectElement>("placement").value = current.placement ?? "bottom-left";
   byId<HTMLElement>("statusDot").classList.toggle("live", current.timer?.status === "running");
   const minutes = Math.floor(elapsed() / 60_000);
   byId<HTMLElement>("activeStatus").textContent = current.timer ? `${current.timer.status === "paused" ? "Paused" : "Tracking"} ${current.timer.title} · ${minutes}m` : "Open a LeetCode problem to begin.";
   byId<HTMLButtonElement>("unpairButton").hidden = !current.token;
+  byId<HTMLButtonElement>("pairButton").hidden = Boolean(current.token);
+  byId<HTMLInputElement>("pairCode").disabled = Boolean(current.token);
+  byId<HTMLElement>("pairState").textContent = current.token ? "Connected" : "Not paired";
+  byId<HTMLElement>("pairState").classList.toggle("connected", Boolean(current.token));
 }
 
 async function save() {
+  current = { ...current, appUrl: APP_URL };
   await chrome.storage.local.set({ unfuckDsa: current });
   render();
 }
@@ -34,41 +39,37 @@ async function save() {
 byId<HTMLSelectElement>("placement").addEventListener("change", async () => {
   current = { ...current, placement: byId<HTMLSelectElement>("placement").value as StoredState["placement"] };
   await save();
-  byId<HTMLElement>("saveStatus").textContent = "Tracker position updated.";
-});
-
-byId<HTMLButtonElement>("saveUrlButton").addEventListener("click", async () => {
-  current = { ...current, appUrl: byId<HTMLInputElement>("appUrl").value.replace(/\/$/, ""), placement: byId<HTMLSelectElement>("placement").value as StoredState["placement"] };
-  await save();
-  byId<HTMLElement>("saveStatus").textContent = "Saved. No pairing required.";
+  byId<HTMLElement>("placementStatus").textContent = "Tracker position updated.";
 });
 
 byId<HTMLButtonElement>("openAppButton").addEventListener("click", () => {
-  const appUrl = byId<HTMLInputElement>("appUrl").value.replace(/\/$/, "");
-  void chrome.tabs.create({ url: `${appUrl}/dashboard` });
+  void chrome.tabs.create({ url: `${APP_URL}/dashboard` });
 });
 
 byId<HTMLButtonElement>("pairButton").addEventListener("click", async () => {
-  const appUrl = byId<HTMLInputElement>("appUrl").value.replace(/\/$/, "");
   const code = byId<HTMLInputElement>("pairCode").value.trim();
   const error = byId<HTMLElement>("pairError");
   error.textContent = "";
   try {
-    const response = await fetch(`${appUrl}/api/extension/pair/claim`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, name: `${navigator.platform} · Chromium` }) });
+    if (!code) throw new Error("Paste the pairing key from your dashboard.");
+    const response = await fetch(`${APP_URL}/api/extension/pair/claim`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code, name: `${navigator.platform} · Chromium` }) });
     const result = await response.json() as { token?: string; deviceId?: string; error?: string };
     if (!response.ok || !result.token) throw new Error(result.error ?? "Pairing failed.");
-    current = { ...current, appUrl, token: result.token, deviceId: result.deviceId };
+    current = { ...current, appUrl: APP_URL, token: result.token, deviceId: result.deviceId };
     await save();
-    error.textContent = "Cloud pairing connected.";
+    error.textContent = "Connected. Today’s revisions can now sync.";
   } catch (cause) {
     error.textContent = cause instanceof Error ? cause.message : "Pairing failed.";
   }
 });
 
 byId<HTMLButtonElement>("unpairButton").addEventListener("click", async () => {
-  current = { appUrl: current.appUrl, timer: current.timer };
+  const next = { ...current, appUrl: APP_URL };
+  delete next.token;
+  delete next.deviceId;
+  current = next;
   await save();
-  byId<HTMLElement>("pairError").textContent = "Cloud pairing removed. Local tracking stays active.";
+  byId<HTMLElement>("pairError").textContent = "Disconnected. Local timer data was kept.";
 });
 
 void chrome.storage.local.get("unfuckDsa").then((stored) => {

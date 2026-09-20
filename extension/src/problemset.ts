@@ -16,133 +16,167 @@ type Revision = {
 type RevisionResponse = {
   ok: boolean;
   revisions?: Revision[];
-  error?: string;
 };
 
-const HOST_ID = "unfuckdsa-problemset-revisions";
+const ROW_ATTRIBUTE = "data-unfuckdsa-revision";
+const HIDDEN_ATTRIBUTE = "data-unfuckdsa-native-hidden";
 let revisions: Revision[] = [];
-let errorMessage = "";
-let loading = true;
+let refreshTimer: number | undefined;
 
 function localDateKey(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-function pageIsDark() {
-  const color = getComputedStyle(document.body).backgroundColor;
-  const channels = color.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number);
-  if (!channels?.length) return matchMedia("(prefers-color-scheme: dark)").matches;
-  const [red, green, blue] = channels;
-  return red * 0.299 + green * 0.587 + blue * 0.114 < 128;
-}
-
-function placementTarget() {
-  return document.querySelector("main") ?? document.querySelector("#__next");
-}
-
-function ensureHost() {
-  let host = document.getElementById(HOST_ID);
-  const target = placementTarget();
-  if (!target) return null;
-  if (!host) {
-    host = document.createElement("section");
-    host.id = HOST_ID;
-    host.setAttribute("aria-label", "Today's revision queue");
-    target.prepend(host);
-    const shadow = host.attachShadow({ mode: "open" });
-    shadow.innerHTML = `<style>
-      :host{display:block;width:100%;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#262626}.queue{width:min(1200px,calc(100% - 32px));margin:18px auto 14px;border:1px solid #d9dfca;border-left:3px solid #9cce2e;border-radius:10px;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.035);overflow:hidden}.head{min-height:52px;padding:0 15px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eceee7}.head div{display:flex;align-items:center;gap:9px}.mark{width:8px;height:8px;border-radius:50%;background:#9cce2e;box-shadow:0 0 0 4px rgba(156,206,46,.13)}h2{margin:0;font-size:14px;font-weight:600}.count{padding:4px 8px;border-radius:12px;color:#4d6419;background:#eff8d9;font-size:11px;font-weight:600}.rows{display:grid}.row{min-height:52px;padding:0 12px;display:grid;grid-template-columns:30px minmax(0,1fr) 86px 76px 38px;gap:10px;align-items:center;border-bottom:1px solid #f0f1ed;color:inherit;transition:background .14s}.row:last-child{border-bottom:0}.row:hover{background:#f8faf4}.order{color:#8a8a86;font-size:12px;text-align:center}.copy{min-width:0;color:inherit;text-decoration:none}.title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}.meta{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#898b84;font-size:10px}.minutes{color:#6f726a;font-size:11px}.difficulty{font-size:11px;text-transform:capitalize}.difficulty.easy{color:#00a67e}.difficulty.medium{color:#d69900}.difficulty.hard{color:#e34b4b}.done{width:32px;height:32px;display:grid;place-items:center;border:1px solid #dce3cc;border-radius:8px;color:#64891b;background:#f8fcee;cursor:pointer;transition:.14s}.done:hover{color:#345000;border-color:#9cce2e;background:#eaffb8}.done:disabled{opacity:.45;cursor:wait}.done svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.3;stroke-linecap:round;stroke-linejoin:round}.message{padding:16px;color:#777b71;font-size:12px}.error{color:#b1543c}.queue[data-theme="dark"]{color:#eff0ed;border-color:#41483a;border-left-color:#b4dd4d;background:#282828;box-shadow:0 5px 22px rgba(0,0,0,.18)}.queue[data-theme="dark"] .head,.queue[data-theme="dark"] .row{border-color:#3a3a3a}.queue[data-theme="dark"] .row:hover{background:#30322e}.queue[data-theme="dark"] .count{color:#dfff94;background:#3b4727}.queue[data-theme="dark"] .meta,.queue[data-theme="dark"] .minutes,.queue[data-theme="dark"] .order{color:#a2a49e}.queue[data-theme="dark"] .done{color:#cdec7b;border-color:#4b5934;background:#343a2c}.queue[data-theme="dark"] .done:hover{color:#ecffba;border-color:#a4cd3e;background:#44532d}@media(max-width:700px){.queue{width:calc(100% - 20px);margin-top:10px}.row{grid-template-columns:24px minmax(0,1fr) 54px 36px}.difficulty{display:none}.minutes{text-align:right}.head{padding-inline:12px}}
-    </style><div class="queue"><div class="head"><div><i class="mark"></i><h2>Today’s revision order</h2></div><span class="count"></span></div><div class="rows"></div></div>`;
-  } else if (host.parentElement !== target || target.firstElementChild !== host) {
-    target.prepend(host);
+function problemPath(value: string) {
+  try {
+    return new URL(value, location.origin).pathname.replace(/\/$/, "");
+  } catch {
+    return "";
   }
-  return host;
 }
 
-function render() {
-  const host = ensureHost();
-  const shadow = host?.shadowRoot;
-  if (!host || !shadow) return;
-  const queue = shadow.querySelector<HTMLElement>(".queue")!;
-  const rows = shadow.querySelector<HTMLElement>(".rows")!;
-  const count = shadow.querySelector<HTMLElement>(".count")!;
-  queue.dataset.theme = pageIsDark() ? "dark" : "light";
-  count.textContent = loading ? "Syncing" : `${revisions.length} today`;
-  rows.replaceChildren();
-
-  if (loading || errorMessage || !revisions.length) {
-    const message = document.createElement("div");
-    message.className = `message${errorMessage ? " error" : ""}`;
-    message.textContent = loading
-      ? "Loading your revision queue…"
-      : errorMessage || "Revision queue clear for today.";
-    rows.append(message);
-    return;
-  }
-
-  revisions.forEach((revision, index) => {
-    const row = document.createElement("div");
-    row.className = "row";
-    row.innerHTML = `<span class="order">${index + 1}</span><a class="copy"><strong class="title"></strong><small class="meta"></small></a><span class="minutes">${revision.minutes} min</span><span class="difficulty ${revision.difficulty}">${revision.difficulty}</span><button class="done" type="button" aria-label="Mark revised" title="Mark revised"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.2 4.2L19 7"/></svg></button>`;
-    row.querySelector<HTMLAnchorElement>(".copy")!.href = revision.url;
-    row.querySelector<HTMLElement>(".title")!.textContent = revision.title;
-    row.querySelector<HTMLElement>(".meta")!.textContent =
-      revision.topics.slice(0, 2).join(" · ") ||
-      revision.reason[0] ||
-      "Due for recall";
-    row.querySelector<HTMLButtonElement>(".done")!.addEventListener(
-      "click",
-      (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void complete(revision, event.currentTarget as HTMLButtonElement);
-      },
-    );
-    rows.append(row);
-  });
+function findProblemList() {
+  const parents = new Map<HTMLElement, number>();
+  document
+    .querySelectorAll<HTMLAnchorElement>('a[href^="/problems/"]')
+    .forEach((link) => {
+      const parent = link.parentElement;
+      if (parent) parents.set(parent, (parents.get(parent) ?? 0) + 1);
+    });
+  return [...parents.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
-async function complete(revision: Revision, button: HTMLButtonElement) {
-  button.disabled = true;
-  const result = (await chrome.runtime.sendMessage({
-    type: "COMPLETE_REVISION",
-    scheduleId: revision.scheduleId,
-  })) as RevisionResponse;
-  if (!result.ok) {
-    button.disabled = false;
-    errorMessage = result.error ?? "Could not mark this revision complete.";
-    render();
-    return;
+function ensureStyles() {
+  if (document.getElementById("unfuckdsa-problemset-style")) return;
+  const style = document.createElement("style");
+  style.id = "unfuckdsa-problemset-style";
+  style.textContent = `
+    [${ROW_ATTRIBUTE}]{position:relative;outline:1px solid color-mix(in srgb,#9fcd35 58%,transparent);outline-offset:-1px;background:color-mix(in srgb,#b8e84b 9%,transparent)!important;box-shadow:inset 3px 0 #9fcd35;margin-bottom:2px}
+    [${ROW_ATTRIBUTE}]:hover{background:color-mix(in srgb,#b8e84b 14%,transparent)!important}
+    [${ROW_ATTRIBUTE}] .ud-revision-chip{flex:none;margin-left:8px;padding:3px 7px;border:1px solid color-mix(in srgb,#9fcd35 58%,transparent);border-radius:999px;color:#648516;background:color-mix(in srgb,#b8e84b 14%,transparent);font-size:10px;font-weight:650;line-height:1.2;white-space:nowrap}
+    .dark [${ROW_ATTRIBUTE}] .ud-revision-chip{color:#d8ff79}
+    @media(max-width:640px){[${ROW_ATTRIBUTE}] .ud-revision-chip{padding:3px 5px;font-size:9px}}
+  `;
+  document.head.append(style);
+}
+
+function restoreNativeRows() {
+  document
+    .querySelectorAll<HTMLElement>(`[${HIDDEN_ATTRIBUTE}]`)
+    .forEach((row) => {
+      row.style.removeProperty("display");
+      row.removeAttribute(HIDDEN_ATTRIBUTE);
+    });
+}
+
+function difficultyClass(difficulty: Revision["difficulty"]) {
+  if (difficulty === "easy") return "text-sd-easy";
+  if (difficulty === "hard") return "text-sd-hard";
+  return "text-sd-medium";
+}
+
+function updateSyntheticRow(row: HTMLAnchorElement, revision: Revision) {
+  row.href = revision.url;
+  row.id = `ud-${revision.problemId}`;
+  row.removeAttribute("target");
+  row.querySelector<HTMLElement>(".ellipsis")?.replaceChildren(revision.title);
+  const difficulty = row.querySelector<HTMLParagraphElement>("p");
+  if (difficulty) {
+    difficulty.className = `mx-0 text-[14px] lc-xl:mx-4 ${difficultyClass(revision.difficulty)}`;
+    difficulty.textContent =
+      revision.difficulty === "medium"
+        ? "Med."
+        : revision.difficulty[0].toUpperCase() + revision.difficulty.slice(1);
   }
-  revisions = revisions.filter(
-    (item) => item.scheduleId !== revision.scheduleId,
+  const percent = [...row.querySelectorAll<HTMLElement>("div")].find(
+    (element) =>
+      !element.children.length &&
+      /^\d+(\.\d+)?%$/.test(element.textContent?.trim() ?? ""),
   );
-  render();
+  if (percent) percent.textContent = `${revision.minutes} min`;
+}
+
+function decorate(row: HTMLAnchorElement, revision: Revision) {
+  row.id = `ud-${revision.problemId}`;
+  row.setAttribute(ROW_ATTRIBUTE, revision.scheduleId);
+  row.querySelector(".ud-revision-chip")?.remove();
+  const chip = document.createElement("span");
+  chip.className = "ud-revision-chip";
+  chip.textContent = "Revision";
+  row.firstElementChild?.append(chip);
+}
+
+function injectRows() {
+  const list = findProblemList();
+  if (!list) return;
+  const current = [
+    ...list.querySelectorAll<HTMLAnchorElement>(`:scope > a[${ROW_ATTRIBUTE}]`),
+  ];
+  const hiddenNativeCount = list.querySelectorAll(
+    `:scope > [${HIDDEN_ATTRIBUTE}]`,
+  ).length;
+  if (
+    current.length === revisions.length &&
+    (revisions.length > 0 || hiddenNativeCount === 0) &&
+    current.every(
+      (row, index) =>
+        row.getAttribute(ROW_ATTRIBUTE) === revisions[index]?.scheduleId,
+    )
+  )
+    return;
+
+  current.forEach((row) => row.remove());
+  restoreNativeRows();
+  if (!revisions.length) return;
+  ensureStyles();
+
+  const nativeRows = [
+    ...list.querySelectorAll<HTMLAnchorElement>(":scope > a"),
+  ];
+  const template =
+    nativeRows.find((row) => !row.href.includes("daily-question")) ??
+    nativeRows[0];
+  if (!template) return;
+  const generated: HTMLAnchorElement[] = [];
+
+  revisions.forEach((revision) => {
+    const path = problemPath(revision.url);
+    const native = nativeRows.find((row) => problemPath(row.href) === path);
+    const row = (native ?? template).cloneNode(true) as HTMLAnchorElement;
+    if (native) {
+      native.style.display = "none";
+      native.setAttribute(HIDDEN_ATTRIBUTE, "true");
+    } else {
+      updateSyntheticRow(row, revision);
+    }
+    decorate(row, revision);
+    generated.push(row);
+  });
+
+  generated.reverse().forEach((row) => list.prepend(row));
+}
+
+function scheduleInjection() {
+  window.clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(injectRows, 80);
 }
 
 async function load() {
-  loading = true;
-  errorMessage = "";
-  render();
-  const result = (await chrome.runtime.sendMessage({
-    type: "GET_TODAY_REVISIONS",
-    date: localDateKey(),
-    timezoneOffset: new Date().getTimezoneOffset(),
-  })) as RevisionResponse;
-  loading = false;
-  if (!result.ok) {
-    errorMessage = result.error ?? "Could not load today's revisions.";
-    revisions = [];
-  } else {
-    revisions = result.revisions ?? [];
-  }
-  render();
+  const result = (await chrome.runtime
+    .sendMessage({
+      type: "GET_TODAY_REVISIONS",
+      date: localDateKey(),
+      timezoneOffset: new Date().getTimezoneOffset(),
+    })
+    .catch(() => ({ ok: false }))) as RevisionResponse;
+  revisions = result.ok ? (result.revisions ?? []) : [];
+  scheduleInjection();
 }
 
-const observer = new MutationObserver(() => {
-  if (!document.getElementById(HOST_ID)) render();
+new MutationObserver(scheduleInjection).observe(document.documentElement, {
+  childList: true,
+  subtree: true,
 });
-observer.observe(document.documentElement, { childList: true, subtree: true });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") void load();
 });
