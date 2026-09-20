@@ -4830,6 +4830,42 @@ html[data-theme="dark"] .auth-notice {
 .queue-action.complete:hover,.row-icon.complete:hover{color:#193f03;background:#dfff9a;border-color:#9dca36}
 html[data-theme="dark"] .queue-action.complete,html[data-theme="dark"] .row-icon.complete{color:#dfff9a;background:#26371a;border-color:#4b6928}
 
+/* Keep row actions as one compact cluster instead of allowing the last control to wrap. */
+.today-revision {
+  grid-template-columns: minmax(72px, 88px) minmax(0, 1fr) repeat(4, 30px);
+  gap: 5px;
+  padding: 9px 10px 9px 12px;
+}
+.revision-row {
+  grid-template-columns: minmax(0, 1fr) repeat(4, 30px);
+  gap: 5px;
+  padding: 9px 10px 9px 12px;
+}
+.today-revision .queue-action,
+.revision-row .row-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+.today-revision .queue-action svg,
+.revision-row .row-icon svg {
+  width: 15px;
+  height: 15px;
+}
+@media (max-width: 620px) {
+  .today-revision {
+    grid-template-columns: minmax(0, 1fr) repeat(4, 30px);
+    gap: 4px;
+    padding-inline: 10px;
+  }
+  .today-revision .revision-status { display: none; }
+  .revision-row {
+    grid-template-columns: minmax(0, 1fr) repeat(4, 30px);
+    gap: 4px;
+    padding-inline: 9px;
+  }
+}
+
 @media (max-width: 620px) {
   .auth-theme-toggle {
     right: 14px;
