@@ -6,12 +6,14 @@ import {
   CalendarDays,
   Check,
   ChevronRight,
+  Copy,
   ExternalLink,
   Flame,
   LayoutDashboard,
   LogOut,
   Menu,
   Plus,
+  PlugZap,
   RefreshCw,
   Settings,
   ListTodo,
@@ -24,7 +26,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createInitialState } from "@/lib/demo-data";
 import type { AppState, Difficulty, Priority, Problem, ScheduleTemplate, SessionStatus } from "@/lib/domain";
-import { createSchedule, nextIntervalDays, recommendRevisionMinutes } from "@/lib/scheduler";
+import { createSchedule, recommendRevisionMinutes } from "@/lib/scheduler";
+import { completeRevision as completeRevisionState } from "@/lib/revisions";
 import { CalendarView, ProblemsView, SettingsView, WeeklyTasksView } from "./workspace-views";
 import { SproutCompanion } from "./sprout-companion";
 import ThemeToggle from "./theme-toggle";
@@ -217,62 +220,9 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
 
   function completeRevision(problemId: string, scheduledId?: string) {
     const completedAt = new Date();
-    updateState((current) => {
-      const problem = current.problems.find((item) => item.id === problemId);
-      if (!problem) return current;
-      const planned = scheduledId
-        ? current.scheduled.find((item) => item.id === scheduledId)
-        : current.scheduled.find(
-            (item) => item.problemId === problemId && item.status === "planned",
-          );
-      const intervalDays = nextIntervalDays(
-        problem.reviewStage,
-        "good",
-        problem.scheduleTemplate,
-        problem.customIntervals,
-      );
-      const nextDue = new Date(completedAt);
-      nextDue.setDate(nextDue.getDate() + intervalDays);
-      nextDue.setHours(10, 0, 0, 0);
-      return {
-        ...current,
-        problems: current.problems.map((item) =>
-          item.id === problemId
-            ? {
-                ...item,
-                reviewStage: item.reviewStage + 1,
-                lastOutcome: "good",
-                dueAt: nextDue.toISOString(),
-              }
-            : item,
-        ),
-        reviews: [
-          {
-            id: crypto.randomUUID(),
-            problemId,
-            completedAt: completedAt.toISOString(),
-            outcome: "good",
-            activeMinutes: planned?.minutes ?? problem.revisionMinutes,
-            hintRevealed: false,
-            approachRevealed: false,
-            rubric: {
-              recognition: 3,
-              invariant: 3,
-              implementation: 3,
-              complexity: 3,
-              edgeCases: 3,
-              explanation: 3,
-            },
-          },
-          ...current.reviews,
-        ],
-        scheduled: current.scheduled.map((item) =>
-          item.id === (scheduledId ?? planned?.id)
-            ? { ...item, status: "completed" as const }
-            : item,
-        ),
-      };
-    });
+    updateState((current) =>
+      completeRevisionState(current, problemId, scheduledId, completedAt),
+    );
   }
 
   async function signOut() {
@@ -307,7 +257,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     <main className="main-area">
       <header className="topbar"><button className="icon-button menu-button" onClick={() => setMenuOpen(true)} aria-label="Open menu"><Menu size={20} /></button><div><span className="eyebrow">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</span><h1>{NAV_ITEMS.find((item) => item.id === view)?.label}</h1></div><div className="top-actions"><ThemeToggle /></div></header>
       <div className="view-content">
-        {view === "today" && <TodayView state={state} todayPlan={todayPlan} todayMinutes={todayMinutes} todayCount={todaySessions.length + todayReviews.length} weekCount={weekSessions.length + weekReviews.length} referenceNow={now.getTime()} onNavigate={setView} onReplan={() => setState((current) => replan(current))} onCompletePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) completeRevision(item.problemId, item.id); }} onRemovePlan={(id) => updateState((current) => ({ ...current, scheduled: current.scheduled.filter((item) => item.id !== id) }))} onReschedulePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) rescheduleProblem(item.problemId); }} />}
+        {view === "today" && <TodayView state={state} todayPlan={todayPlan} todayMinutes={todayMinutes} todayCount={todaySessions.length + todayReviews.length} weekCount={weekSessions.length + weekReviews.length} referenceNow={now.getTime()} cloudEnabled={cloudEnabled} onNavigate={setView} onReplan={() => setState((current) => replan(current))} onCompletePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) completeRevision(item.problemId, item.id); }} onRemovePlan={(id) => updateState((current) => ({ ...current, scheduled: current.scheduled.filter((item) => item.id !== id) }))} onReschedulePlan={(id) => { const item = state.scheduled.find((entry) => entry.id === id); if (item) rescheduleProblem(item.problemId); }} />}
         {view === "calendar" && <CalendarView state={state} updateState={updateState} />}
         {view === "problems" && <ProblemsView state={state} onAdd={() => setManualOpen(true)} onComplete={completeRevision} onDelete={removeProblem} onReschedule={rescheduleProblem} updateState={updateState} />}
         {view === "weekly-tasks" && <WeeklyTasksView state={state} updateState={updateState} onOpenCalendar={() => setView("calendar")} />}
@@ -319,7 +269,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
   </div>;
 }
 
-function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, referenceNow, onNavigate, onReplan, onCompletePlan, onRemovePlan, onReschedulePlan }: { state: AppState; todayPlan: AppState["scheduled"]; todayMinutes: number; todayCount: number; weekCount: number; referenceNow: number; onNavigate: (view: View) => void; onReplan: () => void; onCompletePlan: (id: string) => void; onRemovePlan: (id: string) => void; onReschedulePlan: (id: string) => void }) {
+function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, referenceNow, cloudEnabled, onNavigate, onReplan, onCompletePlan, onRemovePlan, onReschedulePlan }: { state: AppState; todayPlan: AppState["scheduled"]; todayMinutes: number; todayCount: number; weekCount: number; referenceNow: number; cloudEnabled: boolean; onNavigate: (view: View) => void; onReplan: () => void; onCompletePlan: (id: string) => void; onRemovePlan: (id: string) => void; onReschedulePlan: (id: string) => void }) {
   const problemById = new Map(state.problems.map((problem) => [problem.id, problem]));
   const dailyAverage = Math.round(state.sessions.filter((session) => referenceNow - new Date(session.startedAt).getTime() <= 7 * 86_400_000).reduce((sum, session) => sum + session.activeMinutes, 0) / 7);
   const previousWeekCount = state.sessions.filter((session) => {
@@ -367,11 +317,57 @@ function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, refe
       {!todayPlan.length && <div className="queue-empty"><div className="empty-orbit"><Sparkles size={22} /></div><h4>Your revision set is empty.</h4><p>Finish a session from the LeetCode overlay or add a problem manually. It will appear here when due.</p><button className="secondary-button" onClick={() => onNavigate("problems")}><Plus size={16} /> Add manually</button></div>}</div>
     </section>
     <aside className="dashboard-rail">
+      <PairingCard cloudEnabled={cloudEnabled} />
       <section className="quick-launch panel"><div><span className="eyebrow">Quick controls</span><h3>Shape the plan</h3></div><button onClick={() => onNavigate("calendar")}><span className="quick-icon lime"><CalendarDays size={18} /></span><span><strong>Allocate time</strong><small>Paint DSA, dev and busy hours</small></span><ChevronRight size={16} /></button><button onClick={() => onNavigate("problems")}><span className="quick-icon blue"><BookOpenCheck size={18} /></span><span><strong>Revision library</strong><small>Today, week and all solved</small></span><ChevronRight size={16} /></button><button onClick={onReplan}><span className="quick-icon orange"><RefreshCw size={18} /></span><span><strong>Replan backlog</strong><small>Fit work into valid capacity</small></span><ChevronRight size={16} /></button></section>
       <section className="coming-up panel"><div className="rail-heading"><div><span className="eyebrow">Next 72 hours</span><h3>Coming up</h3></div><button className="text-button" onClick={() => onNavigate("problems")}>View all</button></div>{dueSoon.length ? <div className="due-list">{dueSoon.map((problem) => <div key={problem.id}><i className={`difficulty ${problem.difficulty}`} /><span><strong>{problem.title}</strong><small>{new Date(problem.dueAt).toLocaleDateString([], { weekday: "short", day: "numeric" })} · {problem.revisionMinutes} min</small></span></div>)}</div> : <p className="rail-empty">No problems are approaching their due date. Your runway is clean.</p>}</section>
     </aside>
     </div>
   </div>;
+}
+
+function PairingCard({ cloudEnabled }: { cloudEnabled: boolean }) {
+  const [pairingKey, setPairingKey] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!cloudEnabled) return;
+    const controller = new AbortController();
+    fetch("/api/extension/pairing-code", { signal: controller.signal })
+      .then(async (response) => {
+        const data = (await response.json()) as { code?: string; error?: string };
+        if (!response.ok || !data.code)
+          throw new Error(data.error ?? "Could not load pairing key.");
+        setPairingKey(data.code);
+      })
+      .catch((cause) => {
+        if (cause instanceof DOMException && cause.name === "AbortError") return;
+        setMessage(cause instanceof Error ? cause.message : "Could not load pairing key.");
+      });
+    return () => controller.abort();
+  }, [cloudEnabled]);
+
+  async function copyPairingKey() {
+    if (!pairingKey) return;
+    await navigator.clipboard.writeText(pairingKey);
+    setMessage("Copied. Paste it into the extension popup.");
+  }
+
+  return (
+    <section className="pairing-card panel">
+      <div className="pairing-heading">
+        <span className="quick-icon lime"><PlugZap size={18} /></span>
+        <span><strong>Pair your extension</strong><small>One reusable key for this account</small></span>
+      </div>
+      {cloudEnabled ? (
+        <button className="pairing-key" onClick={() => void copyPairingKey()} disabled={!pairingKey} aria-label="Copy extension pairing key">
+          <code>{pairingKey || "Loading…"}</code><Copy size={15} />
+        </button>
+      ) : (
+        <p>Sign in to create your account pairing key.</p>
+      )}
+      {message && <p role="status">{message}</p>}
+    </section>
+  );
 }
 
 function ManualProblemModal({ onClose, onAdd }: { onClose: () => void; onAdd: (title: string, url: string) => void }) {

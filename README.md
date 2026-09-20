@@ -47,7 +47,7 @@ Download `public/downloads/unfuckdsa-extension.zip` from the product homepage, e
 6. Start collapses the tracker; Pause expands it; Resume collapses it again.
 7. End opens the reflection form without leaving LeetCode. Choose Skip, Default, or Add.
 
-The extension owns timer and session state and survives refreshes/browser restarts. Submitted sessions are kept in extension storage and imported by the dashboard when it opens. It captures the user-authored editor buffer only when **End** is explicitly pressed. It does not scrape profiles, copy problem statements, inspect submission traffic, or infer acceptance.
+The extension owns timer and session state and survives refreshes/browser restarts. Submitted sessions are kept in extension storage and imported by the dashboard when it opens. Each account has one reusable pairing key shown on the dashboard; pairing gives each browser its own device token. Once paired, today’s revision questions are placed naturally at the beginning of LeetCode’s existing Problemset list. It captures the user-authored editor buffer only when **End** is explicitly pressed. It does not scrape profiles, copy problem statements, inspect submission traffic, or infer acceptance.
 
 ## Verification
 

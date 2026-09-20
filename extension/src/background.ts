@@ -60,6 +60,8 @@ type TrackerAction =
 
 type TrackerMessage =
   | { type: "TRACKER_STATE" }
+  | { type: "GET_TODAY_REVISIONS"; date: string; timezoneOffset: number }
+  | { type: "COMPLETE_REVISION"; scheduleId: string }
   | { type: "TRACKER_ACTION"; action: TrackerAction; title?: string; url?: string; submissionMode?: "skip" | "default" | "add"; fields?: Partial<SubmissionFields> };
 
 const DEFAULT_STATE: StoredState = {
@@ -92,6 +94,7 @@ async function readState(): Promise<StoredState> {
   return {
     ...DEFAULT_STATE,
     ...value,
+    appUrl: DEFAULT_STATE.appUrl,
     records: value.records ?? [],
     uiMode: value.uiMode ?? (value.timer?.status === "running" ? "minimal" : "expanded"),
   };
@@ -117,11 +120,60 @@ async function captureEditor(tabId: number) {
   return typeof result?.result === "string" ? result.result : "";
 }
 
+async function revisionRequest(
+  state: StoredState,
+  path: string,
+  init?: RequestInit,
+) {
+  if (!state.token)
+    throw new Error("Open the dashboard, copy your pairing key, then connect it in the extension popup.");
+  const response = await fetch(`${state.appUrl}${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${state.token}`,
+      ...init?.headers,
+    },
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    revisions?: unknown[];
+  };
+  if (!response.ok) throw new Error(result.error ?? "Revision sync failed.");
+  return result;
+}
+
 chrome.runtime.onMessage.addListener((message: TrackerMessage, sender, respond) => {
   void (async () => {
     const state = await readState();
     if (message.type === "TRACKER_STATE") {
       respond({ ok: true, state });
+      return;
+    }
+
+    if (message.type === "GET_TODAY_REVISIONS") {
+      const params = new URLSearchParams({
+        date: message.date,
+        timezoneOffset: String(message.timezoneOffset),
+      });
+      const result = await revisionRequest(
+        state,
+        `/api/extension/revisions?${params}`,
+      );
+      respond({ ok: true, revisions: result.revisions ?? [] });
+      return;
+    }
+
+    if (message.type === "COMPLETE_REVISION") {
+      await revisionRequest(state, "/api/extension/revisions", {
+        method: "POST",
+        body: JSON.stringify({
+          scheduleId: message.scheduleId,
+          completedAt: new Date().toISOString(),
+          outcome: "good",
+        }),
+      });
+      respond({ ok: true });
       return;
     }
 

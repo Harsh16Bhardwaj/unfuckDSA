@@ -14,14 +14,16 @@
     </header>
     <main>
       <div class="ready"><i></i><div><strong>On-page tracker ready</strong><span id="activeStatus">Open a LeetCode problem to begin.</span></div></div>
-      <label>Dashboard URL<input id="appUrl" value="https://unfuck-dsa.vercel.app" /></label>
       <label>Tracker position<select id="placement"><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option><option value="top-right">Top right</option></select></label>
-      <div class="actions"><button id="saveUrlButton" class="secondary">Save URL</button><button id="openAppButton" class="primary">Open dashboard</button></div>
-      <p id="saveStatus" class="status"></p>
-      <details>
-        <summary>Optional cloud pairing</summary>
-        <div class="cloud"><p>Local tracking and dashboard sync already work. Pair only when cloud accounts are enabled.</p><label>Pairing code<input id="pairCode" placeholder="AB12-CD34-EF56" /></label><button id="pairButton" class="secondary full">Pair browser</button><button id="unpairButton" class="link" hidden>Remove cloud pairing</button><p id="pairError" class="error"></p></div>
-      </details>
+      <button id="openAppButton" class="primary dashboard-button">Open dashboard</button>
+      <p id="placementStatus" class="status"></p>
+      <section class="pairing">
+        <div class="pairing-title"><div><strong>Connect this browser</strong><span>Use the reusable key shown on your dashboard.</span></div><b id="pairState">Not paired</b></div>
+        <label>Account pairing key<input id="pairCode" autocomplete="off" placeholder="AB12-CD34-EF56" /></label>
+        <button id="pairButton" class="secondary full">Pair extension</button>
+        <button id="unpairButton" class="link" hidden>Disconnect this browser</button>
+        <p id="pairError" class="error"></p>
+      </section>
     </main>
     <script src="popup.js"></script>
   </body>
