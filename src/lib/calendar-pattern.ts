@@ -1,5 +1,6 @@
 import type { AppState, CalendarSlot } from "./domain";
 import { createSchedule } from "./scheduler";
+import { getWeeklyTaskPlacement } from "./weekly-tasks";
 
 export function reconcileRecurringAvailability(state: AppState): AppState {
   const next = materializeAvailability(state);
@@ -87,7 +88,29 @@ export function copyPreviousWeek(state: AppState, start: Date) {
       occupied.add(target);
     }
   }
-  return { ...state, slots: [...state.slots, ...additions] };
+  const placements = [...(state.weeklyTaskPlacements ?? [])];
+  for (const previous of state.weeklyTaskPlacements ?? []) {
+    const nextDate = new Date(`${previous.dayKey}T00:00:00`);
+    nextDate.setDate(nextDate.getDate() + 7);
+    const day = localDay(nextDate);
+    if (!targets.has(day)) continue;
+    const task = state.weeklyTasks.find((item) => item.id === previous.taskId);
+    if (!task) continue;
+    const count = placements.filter((item) => item.taskId === task.id && targets.has(item.dayKey)).length;
+    if (count >= task.sessionsPerWeek) continue;
+    const placement = getWeeklyTaskPlacement({...task,durationHours:previous.durationHours}, `${day}-${String(previous.startHour).padStart(2,"0")}`, occupied);
+    if (!placement) continue;
+    placement.keys.forEach((key) => occupied.add(key));
+    placements.push({...previous,id:crypto.randomUUID(),dayKey:day});
+  }
+  const sprintDays = {...state.sprintDays};
+  for (const [day,kind] of Object.entries(state.sprintDays)) {
+    const date = new Date(`${day}T00:00:00`);
+    date.setDate(date.getDate()+7);
+    const target = localDay(date);
+    if (targets.has(target) && !sprintDays[target]) sprintDays[target] = kind;
+  }
+  return { ...state, slots: [...state.slots, ...additions],weeklyTaskPlacements:placements,sprintDays };
 }
 
 export function moveAvailability(

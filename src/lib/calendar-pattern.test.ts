@@ -7,6 +7,19 @@ import {
   moveAvailability,
 } from "./calendar-pattern";
 describe("calendar availability", () => {
+  it("copies whole task bookings within weekly limits and preserves destination sprint choices", () => {
+    const state = createInitialState();
+    state.weeklyTasks=[{id:'t',title:'HLD',durationHours:2,sessionsPerWeek:2,color:'#fff',createdAt:'2026-09-14'}];
+    state.weeklyTaskPlacements=[{id:'old',taskId:'t',dayKey:'2026-09-14',startHour:12,durationHours:2}];
+    state.sprintDays={'2026-09-14':'solve','2026-09-21':'recall'};
+    const copied=copyPreviousWeek(state,new Date('2026-09-21T00:00:00'));
+    expect(copied.weeklyTaskPlacements).toHaveLength(2);
+    expect(copied.weeklyTaskPlacements[1]).toMatchObject({dayKey:'2026-09-21',startHour:12,durationHours:2});
+    expect(copied.sprintDays['2026-09-21']).toBe('recall');
+    expect(copyPreviousWeek(copied,new Date('2026-09-21T00:00:00')).weeklyTaskPlacements).toHaveLength(2);
+    const blocked={...state,slots:[makeSlot('2026-09-21-13','busy')]};
+    expect(copyPreviousWeek(blocked,new Date('2026-09-21T00:00:00')).weeklyTaskPlacements).toHaveLength(1);
+  });
   it("moves an hour atomically, rejects occupied targets, and prevents its recurring source from reappearing", () => {
     const state = createInitialState();
     state.slots = [
