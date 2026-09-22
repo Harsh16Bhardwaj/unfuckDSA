@@ -98,6 +98,14 @@
         return;
       }
       const now = Date.now();
+      if (message.action === "resetForNavigation") {
+        if (!state.timer && !state.pending) {
+          state.uiMode = "expanded";
+          await writeState(state);
+        }
+        respond({ ok: true, state });
+        return;
+      }
       if (message.action === "start") {
         state.timer = {
           status: "running",

@@ -21,6 +21,7 @@ import styles from "./landing.module.css";
 import ThemeToggle from "@/components/theme-toggle";
 
 const DOWNLOAD_PATH = "/downloads/unfuckdsa-extension.zip";
+const EXTENSION_VERSION = "0.5.1";
 
 const installSteps = [
   "Download and extract the ZIP.",
@@ -116,7 +117,7 @@ export default function HomePage() {
             </Link>
           </div>
           <div className={styles.trustRow}>
-            <span><MonitorDown size={15} /> Chrome + Edge</span>
+            <span><MonitorDown size={15} /> Chrome + Edge · v{EXTENSION_VERSION}</span>
             <span><LockKeyhole size={15} /> Private workspace</span>
             <span><MousePointer2 size={15} /> No profile scraping</span>
           </div>
@@ -278,7 +279,7 @@ export default function HomePage() {
 
       <section className={styles.downloadSection} id="extension">
         <div className={styles.downloadCopy}>
-          <p className={styles.kicker}>One small install. Zero tab switching.</p>
+          <p className={styles.kicker}>Extension v{EXTENSION_VERSION} · One small install. Zero tab switching.</p>
           <h2>Your LeetCode companion, ready for Chromium.</h2>
           <p>
             The ZIP contains only the built extension files required by Chrome and

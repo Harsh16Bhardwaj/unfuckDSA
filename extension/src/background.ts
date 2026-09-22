@@ -56,7 +56,8 @@ type TrackerAction =
   | "expand"
   | "minimize"
   | "submit"
-  | "ackSuccess";
+  | "ackSuccess"
+  | "resetForNavigation";
 
 type TrackerMessage =
   | { type: "TRACKER_STATE" }
@@ -178,6 +179,15 @@ chrome.runtime.onMessage.addListener((message: TrackerMessage, sender, respond) 
     }
 
     const now = Date.now();
+    if (message.action === "resetForNavigation") {
+      if (!state.timer && !state.pending) {
+        state.uiMode = "expanded";
+        await writeState(state);
+      }
+      respond({ ok: true, state });
+      return;
+    }
+
     if (message.action === "start") {
       state.timer = {
         status: "running",

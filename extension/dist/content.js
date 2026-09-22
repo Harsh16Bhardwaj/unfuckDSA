@@ -121,11 +121,29 @@
       needsVisual: $("[name=needsVisual]").checked
     };
   }
+  function resetSubmissionForm() {
+    ["status", "difficulty", "priority", "revisionMinutes"].forEach((group) => {
+      const first = $(`[data-group="${group}"] button`);
+      first?.click();
+    });
+    $('[data-group="status"] button[data-value="solved_independently"]')?.click();
+    $('[data-group="difficulty"] button[data-value="medium"]')?.click();
+    $('[data-group="priority"] button[data-value="normal"]')?.click();
+    $('[data-group="revisionMinutes"] button[data-value="20"]')?.click();
+    $("[name=template]").value = "default";
+    $("[name=topics]").value = "";
+    $("[name=approach]").value = "";
+    $("[name=blocker]").value = "";
+    $("[name=hint]").value = "";
+    $("[name=notes]").value = "";
+    $("[name=needsVisual]").checked = false;
+  }
   async function action(actionName, extra = {}) {
     if (actionName === "ackSuccess") window.clearTimeout(successTimer);
     $(".error").textContent = actionName === "end" ? "Capturing editor\u2026" : "";
     const result = await chrome.runtime.sendMessage({ type: "TRACKER_ACTION", action: actionName, title: problemTitle(), url: location.href, ...extra });
     if (result.state) state = result.state;
+    if (result.ok && actionName === "start") resetSubmissionForm();
     $(".error").textContent = result.ok ? "" : result.error ?? "Something went wrong.";
     render();
     if (result.success) {
@@ -161,6 +179,19 @@
   void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).then((result) => {
     if (result.state) state = result.state;
     render();
+    const latestRecordUrl = state.records?.[0]?.url;
+    if (state.uiMode === "success" && latestRecordUrl !== location.href) void action("resetForNavigation", { url: location.href });
   });
-  window.setInterval(render, 1e3);
+  var lastProblemUrl = location.href;
+  function syncProblemNavigation() {
+    const currentUrl = location.href;
+    if (currentUrl === lastProblemUrl) return;
+    lastProblemUrl = currentUrl;
+    if (!currentUrl.includes("/problems/")) return;
+    if (!state.timer && !state.pending && state.uiMode === "success") void action("resetForNavigation", { url: currentUrl });
+  }
+  window.setInterval(() => {
+    syncProblemNavigation();
+    render();
+  }, 1e3);
 })();

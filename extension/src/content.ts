@@ -13,6 +13,7 @@ type PendingSubmission = { title: string; url: string; startedAt: number; active
 type StoredState = {
   appUrl: string;
   token?: string;
+  records?: Array<{ url?: string }>;
   timer?: Timer;
   pending?: PendingSubmission;
   uiMode?: "expanded" | "minimal" | "submit" | "success";
@@ -146,11 +147,30 @@ function collectFields() {
   };
 }
 
-async function action(actionName: "start" | "pause" | "resume" | "end" | "expand" | "minimize" | "submit" | "ackSuccess", extra: Record<string, unknown> = {}) {
+function resetSubmissionForm() {
+  ["status", "difficulty", "priority", "revisionMinutes"].forEach((group) => {
+    const first = $<HTMLButtonElement>(`[data-group="${group}"] button`);
+    first?.click();
+  });
+  $<HTMLButtonElement>('[data-group="status"] button[data-value="solved_independently"]')?.click();
+  $<HTMLButtonElement>('[data-group="difficulty"] button[data-value="medium"]')?.click();
+  $<HTMLButtonElement>('[data-group="priority"] button[data-value="normal"]')?.click();
+  $<HTMLButtonElement>('[data-group="revisionMinutes"] button[data-value="20"]')?.click();
+  $<HTMLSelectElement>("[name=template]").value = "default";
+  $<HTMLInputElement>("[name=topics]").value = "";
+  $<HTMLTextAreaElement>("[name=approach]").value = "";
+  $<HTMLTextAreaElement>("[name=blocker]").value = "";
+  $<HTMLTextAreaElement>("[name=hint]").value = "";
+  $<HTMLTextAreaElement>("[name=notes]").value = "";
+  $<HTMLInputElement>("[name=needsVisual]").checked = false;
+}
+
+async function action(actionName: "start" | "pause" | "resume" | "end" | "expand" | "minimize" | "submit" | "ackSuccess" | "resetForNavigation", extra: Record<string, unknown> = {}) {
   if (actionName === "ackSuccess") window.clearTimeout(successTimer);
   $(".error").textContent = actionName === "end" ? "Capturing editor…" : "";
   const result = await chrome.runtime.sendMessage({ type: "TRACKER_ACTION", action: actionName, title: problemTitle(), url: location.href, ...extra }) as { ok: boolean; state?: StoredState; error?: string; success?: boolean };
   if (result.state) state = result.state;
+  if (result.ok && actionName === "start") resetSubmissionForm();
   $(".error").textContent = result.ok ? "" : result.error ?? "Something went wrong.";
   render();
   if (result.success) {
@@ -182,5 +202,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   state = changes.unfuckDsa.newValue as StoredState;
   render();
 });
-void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).then((result: { state?: StoredState }) => { if (result.state) state = result.state; render(); });
-window.setInterval(render, 1000);
+void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).then((result: { state?: StoredState }) => {
+  if (result.state) state = result.state;
+  render();
+  const latestRecordUrl = state.records?.[0]?.url;
+  if (state.uiMode === "success" && latestRecordUrl !== location.href) void action("resetForNavigation", { url: location.href });
+});
+let lastProblemUrl = location.href;
+function syncProblemNavigation() {
+  const currentUrl = location.href;
+  if (currentUrl === lastProblemUrl) return;
+  lastProblemUrl = currentUrl;
+  if (!currentUrl.includes("/problems/")) return;
+  if (!state.timer && !state.pending && state.uiMode === "success") void action("resetForNavigation", { url: currentUrl });
+}
+window.setInterval(() => { syncProblemNavigation(); render(); }, 1000);
