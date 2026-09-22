@@ -45,8 +45,12 @@
 </div>`;
   var $ = (selector) => root.querySelector(selector);
   var $$ = (selector) => [...root.querySelectorAll(selector)];
-  var petUrl = chrome.runtime.getURL("sprout-pet.png");
-  $$("img").forEach((image) => {
+  var petUrl = "";
+  try {
+    petUrl = chrome.runtime.getURL("sprout-pet.png");
+  } catch {
+  }
+  if (petUrl) $$("img").forEach((image) => {
     image.src = petUrl;
   });
   var state = { appUrl: "https://unfuck-dsa.vercel.app", uiMode: "expanded" };
@@ -141,7 +145,12 @@
   async function action(actionName, extra = {}) {
     if (actionName === "ackSuccess") window.clearTimeout(successTimer);
     $(".error").textContent = actionName === "end" ? "Capturing editor\u2026" : "";
-    const result = await chrome.runtime.sendMessage({ type: "TRACKER_ACTION", action: actionName, title: problemTitle(), url: location.href, ...extra });
+    let result;
+    try {
+      result = await chrome.runtime.sendMessage({ type: "TRACKER_ACTION", action: actionName, title: problemTitle(), url: location.href, ...extra });
+    } catch {
+      return;
+    }
     if (result.state) state = result.state;
     if (result.ok && actionName === "start") resetSubmissionForm();
     $(".error").textContent = result.ok ? "" : result.error ?? "Something went wrong.";
@@ -165,23 +174,29 @@
   }));
   $$("[data-submit]").forEach((button) => button.addEventListener("click", () => void action("submit", { submissionMode: button.dataset.submit, fields: collectFields() })));
   $(".success-again").addEventListener("click", () => void action("ackSuccess"));
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "TRACKER_UPDATED" && message.state) {
-      state = message.state;
+  try {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.type === "TRACKER_UPDATED" && message.state) {
+        state = message.state;
+        render();
+      }
+    });
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName !== "local" || !changes.unfuckDsa?.newValue) return;
+      state = changes.unfuckDsa.newValue;
       render();
-    }
-  });
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !changes.unfuckDsa?.newValue) return;
-    state = changes.unfuckDsa.newValue;
-    render();
-  });
-  void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).then((result) => {
-    if (result.state) state = result.state;
-    render();
-    const latestRecordUrl = state.records?.[0]?.url;
-    if (state.uiMode === "success" && latestRecordUrl !== location.href) void action("resetForNavigation", { url: location.href });
-  });
+    });
+  } catch {
+  }
+  try {
+    void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).then((result) => {
+      if (result.state) state = result.state;
+      render();
+      const latestRecordUrl = state.records?.[0]?.url;
+      if (state.uiMode === "success" && latestRecordUrl !== location.href) void action("resetForNavigation", { url: location.href });
+    }).catch(() => void 0);
+  } catch {
+  }
   var lastProblemUrl = location.href;
   function syncProblemNavigation() {
     const currentUrl = location.href;

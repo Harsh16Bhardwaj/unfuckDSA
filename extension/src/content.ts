@@ -67,8 +67,9 @@ root.innerHTML = `<style>
 
 const $ = <T extends Element>(selector: string) => root.querySelector<T>(selector)!;
 const $$ = <T extends Element>(selector: string) => [...root.querySelectorAll<T>(selector)];
-const petUrl = chrome.runtime.getURL("sprout-pet.png");
-$$<HTMLImageElement>("img").forEach((image) => { image.src = petUrl; });
+let petUrl = "";
+try { petUrl = chrome.runtime.getURL("sprout-pet.png"); } catch { /* stale extension context */ }
+if (petUrl) $$<HTMLImageElement>("img").forEach((image) => { image.src = petUrl; });
 
 let state: StoredState = { appUrl: "https://unfuck-dsa.vercel.app", uiMode: "expanded" };
 let successTimer: number | undefined;
@@ -168,7 +169,12 @@ function resetSubmissionForm() {
 async function action(actionName: "start" | "pause" | "resume" | "end" | "expand" | "minimize" | "submit" | "ackSuccess" | "resetForNavigation", extra: Record<string, unknown> = {}) {
   if (actionName === "ackSuccess") window.clearTimeout(successTimer);
   $(".error").textContent = actionName === "end" ? "Capturing editor…" : "";
-  const result = await chrome.runtime.sendMessage({ type: "TRACKER_ACTION", action: actionName, title: problemTitle(), url: location.href, ...extra }) as { ok: boolean; state?: StoredState; error?: string; success?: boolean };
+  let result: { ok: boolean; state?: StoredState; error?: string; success?: boolean };
+  try {
+    result = await chrome.runtime.sendMessage({ type: "TRACKER_ACTION", action: actionName, title: problemTitle(), url: location.href, ...extra }) as { ok: boolean; state?: StoredState; error?: string; success?: boolean };
+  } catch {
+    return;
+  }
   if (result.state) state = result.state;
   if (result.ok && actionName === "start") resetSubmissionForm();
   $(".error").textContent = result.ok ? "" : result.error ?? "Something went wrong.";
@@ -194,20 +200,24 @@ $$<HTMLButtonElement>("[data-group] button").forEach((button) => button.addEvent
 $$<HTMLButtonElement>("[data-submit]").forEach((button) => button.addEventListener("click", () => void action("submit", { submissionMode: button.dataset.submit, fields: collectFields() })));
 $(".success-again").addEventListener("click", () => void action("ackSuccess"));
 
-chrome.runtime.onMessage.addListener((message: { type?: string; state?: StoredState }) => {
-  if (message.type === "TRACKER_UPDATED" && message.state) { state = message.state; render(); }
-});
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== "local" || !changes.unfuckDsa?.newValue) return;
-  state = changes.unfuckDsa.newValue as StoredState;
-  render();
-});
-void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).then((result: { state?: StoredState }) => {
-  if (result.state) state = result.state;
-  render();
-  const latestRecordUrl = state.records?.[0]?.url;
-  if (state.uiMode === "success" && latestRecordUrl !== location.href) void action("resetForNavigation", { url: location.href });
-});
+try {
+  chrome.runtime.onMessage.addListener((message: { type?: string; state?: StoredState }) => {
+    if (message.type === "TRACKER_UPDATED" && message.state) { state = message.state; render(); }
+  });
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "local" || !changes.unfuckDsa?.newValue) return;
+    state = changes.unfuckDsa.newValue as StoredState;
+    render();
+  });
+} catch { /* stale extension context */ }
+try {
+  void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).then((result: { state?: StoredState }) => {
+    if (result.state) state = result.state;
+    render();
+    const latestRecordUrl = state.records?.[0]?.url;
+    if (state.uiMode === "success" && latestRecordUrl !== location.href) void action("resetForNavigation", { url: location.href });
+  }).catch(() => undefined);
+} catch { /* stale extension context */ }
 let lastProblemUrl = location.href;
 function syncProblemNavigation() {
   const currentUrl = location.href;
