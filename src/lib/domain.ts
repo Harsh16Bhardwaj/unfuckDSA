@@ -142,6 +142,7 @@ export interface WeeklyTaskPlacement {
 }
 
 export interface AppState {
+  deletedProblemKeys?: string[];
   recurringAvailability?: Array<{ weekday: number; hour: number; kind: SlotKind; startsOn: string }>;
   availabilityExceptions?: string[];
   revealEvents?: Array<{ id: string; problemId: string; at: string; kind: "hint" | "approach" }>;

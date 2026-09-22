@@ -66,11 +66,37 @@
     if (!response.ok) throw new Error(result.error ?? "Revision sync failed.");
     return result;
   }
+  async function syncPendingRecords(state) {
+    if (!state.token) return;
+    let changed = false;
+    const records = [];
+    for (const record of state.records ?? []) {
+      if (record.syncedAt) {
+        records.push(record);
+        continue;
+      }
+      try {
+        await revisionRequest(state, "/api/extension/sessions", {
+          method: "POST",
+          body: JSON.stringify(record)
+        });
+        records.push({ ...record, syncedAt: (/* @__PURE__ */ new Date()).toISOString() });
+        changed = true;
+      } catch {
+        records.push(record);
+      }
+    }
+    if (changed) {
+      state.records = records;
+      await writeState(state);
+    }
+  }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     void (async () => {
       const state = await readState();
       if (message.type === "TRACKER_STATE") {
         respond({ ok: true, state });
+        await syncPendingRecords(state);
         return;
       }
       if (message.type === "GET_TODAY_REVISIONS") {
@@ -155,6 +181,7 @@
         state.uiMode = "success";
         await writeState(state);
         respond({ ok: true, state, success: true });
+        await syncPendingRecords(state);
         return;
       }
       const timer = state.timer;

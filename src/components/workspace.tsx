@@ -32,6 +32,7 @@ import { CalendarView, ProblemsView, SettingsView, WeeklyTasksView } from "./wor
 import { SproutCompanion } from "./sprout-companion";
 import ThemeToggle from "./theme-toggle";
 import { materializeAvailability, reconcileRecurringAvailability } from '@/lib/calendar-pattern';
+import { canonicalProblemKey, mergeWorkspaceStates } from "@/lib/workspace-merge";
 
 type View = "today" | "calendar" | "problems" | "weekly-tasks" | "settings";
 type CapturedSession = { title: string; url: string; activeMinutes: number; code?: string; captureId?: string; startedAt?: number };
@@ -84,12 +85,16 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
   const [view, setView] = useState<View>("today");
   const [menuOpen, setMenuOpen] = useState(false);
   const [state, setState] = useState<AppState>(() => createInitialState());
+  const [localLoaded, setLocalLoaded] = useState(false);
   const [cloudLoaded, setCloudLoaded] = useState(!cloudEnabled);
   const [manualOpen, setManualOpen] = useState(false);
   const [capture, setCapture] = useState<CapturedSession | null>(null);
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setState(loadState(storageScope)), 0);
+    const timeout = window.setTimeout(() => {
+      setState(loadState(storageScope));
+      setLocalLoaded(true);
+    }, 0);
     return () => window.clearTimeout(timeout);
   }, [storageScope]);
 
@@ -103,12 +108,14 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
   }, [state, storageScope, cloudEnabled, cloudLoaded]);
 
   useEffect(() => {
-    if (!cloudEnabled) return;
+    if (!cloudEnabled || !localLoaded) return;
     fetch("/api/workspace/state").then(async (response) => {
       const data = await response.json() as { workspace?: { state?: AppState } };
-      if (response.ok && data.workspace?.state) setState(reconcileRecurringAvailability({ ...data.workspace.state, dailyTargetMinutes: data.workspace.state.dailyTargetMinutes ?? 300, sprintDays: data.workspace.state.sprintDays ?? {}, weeklyTasks: data.workspace.state.weeklyTasks ?? [], weeklyTaskPlacements: data.workspace.state.weeklyTaskPlacements ?? [] }));
+      if (response.ok && data.workspace?.state) {
+        setState((current) => reconcileRecurringAvailability(mergeWorkspaceStates(current, data.workspace?.state)));
+      }
     }).finally(() => setCloudLoaded(true));
-  }, [cloudEnabled]);
+  }, [cloudEnabled, localLoaded]);
 
   useEffect(() => {
     const search = new URLSearchParams(window.location.search);
@@ -131,10 +138,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
   const replan = useCallback((value: AppState) => { const next = materializeAvailability(value); return { ...next, scheduled: createSchedule({ problems: next.problems, slots: next.slots, mode: next.dayMode, manualRecallBlocks: next.manualRecallBlocks }) }; }, []);
   const updateState = useCallback((recipe: (current: AppState) => AppState, shouldReplan = false) => setState((current) => { const next = recipe(current); return shouldReplan ? replan(next) : next; }), [replan]);
 
-  useEffect(() => {
-    function importExtensionRecords(event: MessageEvent) {
-      if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "UNFUCKDSA_EXTENSION_SYNC" || !Array.isArray(event.data.records)) return;
-      const records = event.data.records as ExtensionRecord[];
+  const importExtensionRecords = useCallback((records: ExtensionRecord[]) => {
       setState((current) => {
         const importedKeys = new Set(current.sessions.map((session) => session.idempotencyKey));
         const pending = records.filter((record) => record?.id && !importedKeys.has(`extension-local-${record.id}`));
@@ -145,6 +149,8 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
           const existing = next.problems.find((problem) => problem.slug === slug);
           const problemId = existing?.id ?? `extension-problem-${record.id}`;
           if (!record.skipRevision) {
+            const problemKey = `leetcode:${slug}`;
+            next.deletedProblemKeys = (next.deletedProblemKeys ?? []).filter((key) => key !== problemKey);
             const dueAt = new Date(record.finishedAt);
             dueAt.setDate(dueAt.getDate() + (record.status === "stuck" ? 1 : record.template === "relaxed" ? 2 : 1));
             dueAt.setHours(10, 0, 0, 0);
@@ -177,11 +183,37 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
         }
         return replan(next);
       });
-    }
-    window.addEventListener("message", importExtensionRecords);
-    window.postMessage({ type: "UNFUCKDSA_REQUEST_SYNC" }, window.location.origin);
-    return () => window.removeEventListener("message", importExtensionRecords);
   }, [replan]);
+
+  useEffect(() => {
+    if (!cloudLoaded) return;
+    function receiveExtensionRecords(event: MessageEvent) {
+      if (event.source !== window || event.origin !== window.location.origin || event.data?.type !== "UNFUCKDSA_EXTENSION_SYNC" || !Array.isArray(event.data.records)) return;
+      importExtensionRecords(event.data.records as ExtensionRecord[]);
+    }
+    window.addEventListener("message", receiveExtensionRecords);
+    window.postMessage({ type: "UNFUCKDSA_REQUEST_SYNC" }, window.location.origin);
+    let refreshTimer: number | undefined;
+    const loadCloudExtensionRecords = () => {
+      if (!cloudEnabled) return;
+      void fetch("/api/extension/sessions")
+        .then(async (response) => {
+          const data = await response.json() as { records?: ExtensionRecord[] };
+          if (response.ok && Array.isArray(data.records)) importExtensionRecords(data.records);
+        })
+        .catch(() => undefined);
+    };
+    if (cloudEnabled) {
+      loadCloudExtensionRecords();
+      window.addEventListener("focus", loadCloudExtensionRecords);
+      refreshTimer = window.setInterval(loadCloudExtensionRecords, 30_000);
+    }
+    return () => {
+      window.removeEventListener("message", receiveExtensionRecords);
+      window.removeEventListener("focus", loadCloudExtensionRecords);
+      if (refreshTimer) window.clearInterval(refreshTimer);
+    };
+  }, [cloudEnabled, cloudLoaded, importExtensionRecords]);
 
   function addManualProblem(title: string, url: string) {
     const slug = extractSlug(url) || slugify(title);
@@ -189,7 +221,7 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
     if (!existing) {
       const dueAt = new Date(); dueAt.setDate(dueAt.getDate() + 1); dueAt.setHours(10, 0, 0, 0);
       const problem: Problem = { id: crypto.randomUUID(), source: url.includes("leetcode.com") ? "leetcode" : "manual", slug, title, url: url || undefined, topics: [], difficulty: "medium", priority: "normal", revisionMinutes: 20, scheduleTemplate: "default", needsVisual: false, initialMinutes: 0, reviewStage: 0, dueAt: dueAt.toISOString(), status: "stopped", revealCount: 0, createdAt: new Date().toISOString() };
-      updateState((current) => ({ ...current, problems: [problem, ...current.problems] }), true);
+      updateState((current) => ({ ...current, deletedProblemKeys: (current.deletedProblemKeys ?? []).filter((key) => key !== canonicalProblemKey(problem)), problems: [problem, ...current.problems] }), true);
     }
     setManualOpen(false);
   }
@@ -210,7 +242,10 @@ export default function Workspace({ storageScope, cloudEnabled, nowIso, username
   }
 
   function removeProblem(id: string) {
-    updateState((current) => ({ ...current, problems: current.problems.filter((problem) => problem.id !== id), scheduled: current.scheduled.filter((item) => item.problemId !== id) }));
+    updateState((current) => {
+      const problem = current.problems.find((item) => item.id === id);
+      return { ...current, deletedProblemKeys: problem ? [...new Set([...(current.deletedProblemKeys ?? []), canonicalProblemKey(problem)])] : current.deletedProblemKeys, problems: current.problems.filter((item) => item.id !== id), scheduled: current.scheduled.filter((item) => item.problemId !== id) };
+    });
   }
 
   function rescheduleProblem(id: string) {

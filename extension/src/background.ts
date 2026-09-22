@@ -35,6 +35,7 @@ type LoggedSession = SubmissionFields & PendingSubmission & {
   id: string;
   finishedAt: string;
   skipRevision: boolean;
+  syncedAt?: string;
 };
 
 type StoredState = {
@@ -144,11 +145,38 @@ async function revisionRequest(
   return result;
 }
 
+async function syncPendingRecords(state: StoredState) {
+  if (!state.token) return;
+  let changed = false;
+  const records: LoggedSession[] = [];
+  for (const record of state.records ?? []) {
+    if (record.syncedAt) {
+      records.push(record);
+      continue;
+    }
+    try {
+      await revisionRequest(state, "/api/extension/sessions", {
+        method: "POST",
+        body: JSON.stringify(record),
+      });
+      records.push({ ...record, syncedAt: new Date().toISOString() });
+      changed = true;
+    } catch {
+      records.push(record);
+    }
+  }
+  if (changed) {
+    state.records = records;
+    await writeState(state);
+  }
+}
+
 chrome.runtime.onMessage.addListener((message: TrackerMessage, sender, respond) => {
   void (async () => {
     const state = await readState();
     if (message.type === "TRACKER_STATE") {
       respond({ ok: true, state });
+      await syncPendingRecords(state);
       return;
     }
 
@@ -240,6 +268,7 @@ chrome.runtime.onMessage.addListener((message: TrackerMessage, sender, respond) 
       state.uiMode = "success";
       await writeState(state);
       respond({ ok: true, state, success: true });
+      await syncPendingRecords(state);
       return;
     }
 

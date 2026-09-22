@@ -44,6 +44,7 @@
       if (!response.ok || !result.token) throw new Error(result.error ?? "Pairing failed.");
       current = { ...current, appUrl: APP_URL, token: result.token, deviceId: result.deviceId };
       await save();
+      void chrome.runtime.sendMessage({ type: "TRACKER_STATE" });
       error.textContent = "Connected. Today\u2019s revisions can now sync.";
     } catch (cause) {
       error.textContent = cause instanceof Error ? cause.message : "Pairing failed.";
