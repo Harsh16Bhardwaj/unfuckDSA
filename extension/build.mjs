@@ -10,7 +10,6 @@ await Promise.all([
   build({ entryPoints: [fileURLToPath(new URL("./src/background.ts", import.meta.url))], bundle: true, outfile: fileURLToPath(new URL("./dist/background.js", import.meta.url)), format: "iife", target: "chrome120" }),
   build({ entryPoints: [fileURLToPath(new URL("./src/content.ts", import.meta.url))], bundle: true, outfile: fileURLToPath(new URL("./dist/content.js", import.meta.url)), format: "iife", target: "chrome120" }),
   build({ entryPoints: [fileURLToPath(new URL("./src/problemset.ts", import.meta.url))], bundle: true, outfile: fileURLToPath(new URL("./dist/problemset.js", import.meta.url)), format: "iife", target: "chrome120" }),
-  build({ entryPoints: [fileURLToPath(new URL("./src/app-bridge.ts", import.meta.url))], bundle: true, outfile: fileURLToPath(new URL("./dist/app-bridge.js", import.meta.url)), format: "iife", target: "chrome120" }),
 ]);
 await Promise.all([
   cp(new URL("./manifest.json", import.meta.url), new URL("./dist/manifest.json", import.meta.url)),
