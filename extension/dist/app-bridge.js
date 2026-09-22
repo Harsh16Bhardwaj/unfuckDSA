@@ -11,12 +11,16 @@
       return false;
     }
   }
-  async function publishStoredState() {
+  function publishStoredState() {
     if (!contextIsAlive()) return;
     try {
-      const stored = await chrome.storage.local.get("unfuckDsa");
-      if (!contextIsAlive()) return;
-      publish(stored.unfuckDsa);
+      chrome.storage.local.get("unfuckDsa", (stored) => {
+        try {
+          if (chrome.runtime.lastError || !contextIsAlive()) return;
+          publish(stored.unfuckDsa);
+        } catch {
+        }
+      });
     } catch {
     }
   }
@@ -25,7 +29,7 @@
     window.addEventListener("message", (event) => {
       if (event.source !== window || event.data?.type !== "UNFUCKDSA_REQUEST_SYNC") return;
       if (!contextIsAlive()) return;
-      void publishStoredState();
+      publishStoredState();
     });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (!contextIsAlive()) return;

@@ -21,7 +21,7 @@ import styles from "./landing.module.css";
 import ThemeToggle from "@/components/theme-toggle";
 
 const DOWNLOAD_PATH = "/downloads/unfuckdsa-extension.zip";
-const EXTENSION_VERSION = "0.6.2";
+const EXTENSION_VERSION = "0.6.3";
 
 const installSteps = [
   "Download and extract the ZIP.",

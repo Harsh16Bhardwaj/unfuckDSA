@@ -14,12 +14,19 @@ function contextIsAlive() {
   }
 }
 
-async function publishStoredState() {
+function publishStoredState() {
   if (!contextIsAlive()) return;
   try {
-    const stored = await chrome.storage.local.get("unfuckDsa");
-    if (!contextIsAlive()) return;
-    publish(stored.unfuckDsa as StoredState | undefined);
+    chrome.storage.local.get("unfuckDsa", (stored) => {
+      try {
+        // Reading lastError in the callback prevents Chrome from surfacing a
+        // rejected promise while an old content script is being torn down.
+        if (chrome.runtime.lastError || !contextIsAlive()) return;
+        publish(stored.unfuckDsa as StoredState | undefined);
+      } catch {
+        // The extension may be invalidated between the callback and publish.
+      }
+    });
   } catch {
     // The page can outlive an extension update. A stale bridge must fail silently.
   }
@@ -30,7 +37,7 @@ try {
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.type !== "UNFUCKDSA_REQUEST_SYNC") return;
     if (!contextIsAlive()) return;
-    void publishStoredState();
+    publishStoredState();
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
