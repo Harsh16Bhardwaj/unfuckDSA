@@ -1,5 +1,24 @@
 export {};
 
+// A content script can outlive an extension reload while the LeetCode tab
+// remains open. Chrome reports the resulting teardown error on the page even
+// though there is no recoverable work left to do. Suppress only that specific
+// stale-context noise; all other errors remain visible.
+function isInvalidatedContextError(reason: unknown) {
+  return String(reason instanceof Error ? reason.message : reason).toLowerCase().includes("extension context invalidated");
+}
+
+window.addEventListener("error", (event) => {
+  if (!isInvalidatedContextError(event.error ?? event.message)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+});
+window.addEventListener("unhandledrejection", (event) => {
+  if (!isInvalidatedContextError(event.reason)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+});
+
 type Timer = {
   status: "running" | "paused";
   title: string;

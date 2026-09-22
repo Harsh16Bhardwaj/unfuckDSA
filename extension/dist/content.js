@@ -1,6 +1,19 @@
 "use strict";
 (() => {
   // extension/src/content.ts
+  function isInvalidatedContextError(reason) {
+    return String(reason instanceof Error ? reason.message : reason).toLowerCase().includes("extension context invalidated");
+  }
+  window.addEventListener("error", (event) => {
+    if (!isInvalidatedContextError(event.error ?? event.message)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    if (!isInvalidatedContextError(event.reason)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  });
   var ICONS = {
     play: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.6v12.8L18 12 8 5.6Z"/></svg>`,
     pause: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg>`,

@@ -31,7 +31,7 @@
     byId("placementStatus").textContent = "Tracker position updated.";
   });
   byId("openAppButton").addEventListener("click", () => {
-    void chrome.tabs.create({ url: `${APP_URL}/dashboard` });
+    void chrome.tabs.create({ url: `${APP_URL}/dashboard` }).catch(() => void 0);
   });
   byId("pairButton").addEventListener("click", async () => {
     const code = byId("pairCode").value.trim();
@@ -44,7 +44,7 @@
       if (!response.ok || !result.token) throw new Error(result.error ?? "Pairing failed.");
       current = { ...current, appUrl: APP_URL, token: result.token, deviceId: result.deviceId };
       await save();
-      void chrome.runtime.sendMessage({ type: "TRACKER_STATE" });
+      void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).catch(() => void 0);
       error.textContent = "Connected. Today\u2019s revisions can now sync.";
     } catch (cause) {
       error.textContent = cause instanceof Error ? cause.message : "Pairing failed.";
@@ -58,9 +58,12 @@
     await save();
     byId("pairError").textContent = "Disconnected. Local timer data was kept.";
   });
-  void chrome.storage.local.get("unfuckDsa").then((stored) => {
-    current = stored.unfuckDsa ?? current;
-    render();
-    window.setInterval(render, 1e3);
-  });
+  try {
+    void chrome.storage.local.get("unfuckDsa").then((stored) => {
+      current = stored.unfuckDsa ?? current;
+      render();
+      window.setInterval(render, 1e3);
+    }).catch(() => void 0);
+  } catch {
+  }
 })();

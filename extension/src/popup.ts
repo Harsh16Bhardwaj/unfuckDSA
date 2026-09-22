@@ -43,7 +43,7 @@ byId<HTMLSelectElement>("placement").addEventListener("change", async () => {
 });
 
 byId<HTMLButtonElement>("openAppButton").addEventListener("click", () => {
-  void chrome.tabs.create({ url: `${APP_URL}/dashboard` });
+  void chrome.tabs.create({ url: `${APP_URL}/dashboard` }).catch(() => undefined);
 });
 
 byId<HTMLButtonElement>("pairButton").addEventListener("click", async () => {
@@ -57,7 +57,7 @@ byId<HTMLButtonElement>("pairButton").addEventListener("click", async () => {
     if (!response.ok || !result.token) throw new Error(result.error ?? "Pairing failed.");
     current = { ...current, appUrl: APP_URL, token: result.token, deviceId: result.deviceId };
     await save();
-    void chrome.runtime.sendMessage({ type: "TRACKER_STATE" });
+    void chrome.runtime.sendMessage({ type: "TRACKER_STATE" }).catch(() => undefined);
     error.textContent = "Connected. Today’s revisions can now sync.";
   } catch (cause) {
     error.textContent = cause instanceof Error ? cause.message : "Pairing failed.";
@@ -73,8 +73,12 @@ byId<HTMLButtonElement>("unpairButton").addEventListener("click", async () => {
   byId<HTMLElement>("pairError").textContent = "Disconnected. Local timer data was kept.";
 });
 
-void chrome.storage.local.get("unfuckDsa").then((stored) => {
-  current = (stored.unfuckDsa as StoredState | undefined) ?? current;
-  render();
-  window.setInterval(render, 1000);
-});
+try {
+  void chrome.storage.local.get("unfuckDsa").then((stored) => {
+    current = (stored.unfuckDsa as StoredState | undefined) ?? current;
+    render();
+    window.setInterval(render, 1000);
+  }).catch(() => undefined);
+} catch {
+  // The popup can be torn down while the extension is reloaded.
+}
