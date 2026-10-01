@@ -141,6 +141,17 @@ export interface WeeklyTaskPlacement {
   durationHours: number;
 }
 
+export interface RoadmapPhase {
+  id: string;
+  startsOn: string;
+  endsOn: string;
+  title: string;
+  kind: "focus" | "buffer" | "exam" | "diagnostic" | "interview";
+  topics: string[];
+  sideTopic?: string;
+  guidance?: string;
+}
+
 export interface AppState {
   deletedProblemKeys?: string[];
   recurringAvailability?: Array<{ weekday: number; hour: number; kind: SlotKind; startsOn: string }>;
@@ -159,6 +170,8 @@ export interface AppState {
   sprintDays: Record<string, SprintKind>;
   weeklyTasks: WeeklyTask[];
   weeklyTaskPlacements: WeeklyTaskPlacement[];
+  roadmapPhases?: RoadmapPhase[];
+  roadmapNotes?: string[];
 }
 
 export const DEFAULT_INTERVALS = [1, 3, 7, 14, 30, 60] as const;

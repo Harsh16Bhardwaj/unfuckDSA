@@ -84,6 +84,12 @@ export function mergeWorkspaceStates(
       incoming.revealEvents ?? [],
       (event) => event.id,
     ),
+    roadmapPhases: mergeByKey(
+      base.roadmapPhases ?? [],
+      incoming.roadmapPhases ?? [],
+      (phase) => phase.id,
+    ).sort((left, right) => left.startsOn.localeCompare(right.startsOn)),
+    roadmapNotes: incoming.roadmapNotes?.length ? incoming.roadmapNotes : base.roadmapNotes,
   };
 }
 

@@ -48,6 +48,7 @@ import {
 import { ProblemHistory } from "./problem-history";
 import { ChangePassword } from "./change-password";
 import { createSchedule } from "@/lib/scheduler";
+import { roadmapPhaseOnDay, roadmapPhasesInWeek } from "@/lib/roadmap";
 
 type UpdateState = (
   recipe: (current: AppState) => AppState,
@@ -184,6 +185,18 @@ export function CalendarView({
   );
   const mobileDay = days[mobileDayIndex];
   const mobileDayKey = isoDay(mobileDay);
+  const mobileRoadmap = roadmapPhaseOnDay(state.roadmapPhases, mobileDayKey);
+  const weekRoadmap = roadmapPhasesInWeek(state.roadmapPhases, isoDay(days[0]), isoDay(days[6]));
+  const roadmapMonths = (() => {
+    const phases = state.roadmapPhases ?? [];
+    if (!phases.length) return [];
+    const starts = phases.map((phase) => phase.startsOn).sort();
+    const ends = phases.map((phase) => phase.endsOn).sort();
+    const first = new Date(`${starts[0]}T12:00:00`);
+    const last = new Date(`${ends.at(-1)}T12:00:00`);
+    const count = (last.getFullYear() - first.getFullYear()) * 12 + last.getMonth() - first.getMonth() + 1;
+    return Array.from({ length: count }, (_, index) => new Date(first.getFullYear(), first.getMonth() + index, 1));
+  })();
   const slotMap = new Map(
     state.slots.map((slot) => [slot.id.replace(/^slot-/, ""), slot]),
   );
@@ -785,6 +798,39 @@ export function CalendarView({
         </div>
       </div>
 
+      {!!state.roadmapPhases?.length && (
+        <section className="roadmap-panel panel" aria-label="DSA roadmap for this week">
+          <div className="roadmap-topline">
+            <span className="eyebrow">Your DSA roadmap · February interview target</span>
+            <div className="roadmap-months" aria-label="Jump to roadmap month">
+              {roadmapMonths.map((month) => (
+                <button key={`${month.getFullYear()}-${month.getMonth()}`} className={days.some((day) => day.getFullYear() === month.getFullYear() && day.getMonth() === month.getMonth()) ? "active" : ""} onClick={() => {
+                  const target = new Date(month);
+                  const start = new Date();
+                  start.setHours(0, 0, 0, 0);
+                  start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+                  target.setDate(target.getDate() - ((target.getDay() + 6) % 7));
+                  changeWeek(Math.round((target.getTime() - start.getTime()) / (7 * 86_400_000)));
+                }}>{month.toLocaleDateString([], { month: "short" })}</button>
+              ))}
+            </div>
+          </div>
+          {weekRoadmap.length ? (
+            <div className="roadmap-week-list">
+              {weekRoadmap.map((phase) => (
+                <article className={`roadmap-phase roadmap-${phase.kind}`} key={phase.id}>
+                  <div className="roadmap-phase-head"><strong>{phase.title}</strong><span>{new Date(`${phase.startsOn}T12:00:00`).toLocaleDateString([], { day: "numeric", month: "short" })}–{new Date(`${phase.endsOn}T12:00:00`).toLocaleDateString([], { day: "numeric", month: "short" })}</span></div>
+                  <p>{phase.topics.join(" · ")}</p>
+                  {phase.sideTopic && <small>Side: {phase.sideTopic}</small>}
+                  {phase.guidance && <small>{phase.guidance}</small>}
+                </article>
+              ))}
+            </div>
+          ) : <p className="roadmap-empty">No roadmap phase in this week.</p>}
+          {!!state.roadmapNotes?.length && <details className="roadmap-notes"><summary>Roadmap rules</summary>{state.roadmapNotes.map((note) => <p key={note}>{note}</p>)}</details>}
+        </section>
+      )}
+
       <div className="mobile-day-picker panel">
         <button
           className="icon-button"
@@ -807,12 +853,12 @@ export function CalendarView({
             })}
           </strong>
           <small>
-            {isPastCalendarDay(mobileDayKey, calendarNow)
+            {mobileRoadmap?.title ?? (isPastCalendarDay(mobileDayKey, calendarNow)
               ? "past day locked"
               : (state.sprintDays?.[mobileDayKey] ??
                 (selectedDays.has(mobileDayKey)
                   ? "selected for emphasis"
-                  : "tap to select the day"))}
+                  : "tap to select the day")))}
           </small>
         </button>
         <button
@@ -947,6 +993,7 @@ export function CalendarView({
               const sprint = state.sprintDays?.[dayKey];
               const selected = selectedDays.has(dayKey);
               const locked = isPastCalendarDay(dayKey, calendarNow);
+              const roadmap = roadmapPhaseOnDay(state.roadmapPhases, dayKey);
               return (
                 <button
                   key={dayKey}
@@ -956,7 +1003,7 @@ export function CalendarView({
                       ? "Past day locked"
                       : "Select this day for solve or recall emphasis"
                   }
-                  className={`day-selector ${locked ? "past-locked" : ""} ${dayKey === isoDay(new Date()) ? "today" : ""} ${selected ? "selected" : ""} ${sprint ? `sprint-${sprint}` : ""}`}
+                  className={`day-selector ${locked ? "past-locked" : ""} ${dayKey === isoDay(new Date()) ? "today" : ""} ${selected ? "selected" : ""} ${sprint ? `sprint-${sprint}` : ""} ${roadmap ? `roadmap-day-${roadmap.kind}` : ""}`}
                   onClick={() => toggleDay(dayKey)}
                   aria-pressed={selected}
                 >
@@ -965,9 +1012,9 @@ export function CalendarView({
                   </span>
                   <strong>{day.getDate()}</strong>
                   <small>
-                    {locked
+                    {roadmap?.title ?? (locked
                       ? "locked"
-                      : (sprint ?? (selected ? "selected" : "select day"))}
+                      : (sprint ?? (selected ? "selected" : "select day")))}
                   </small>
                 </button>
               );

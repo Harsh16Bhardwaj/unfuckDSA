@@ -32,6 +32,7 @@ import { CalendarView, ProblemsView, SettingsView, WeeklyTasksView } from "./wor
 import { SproutCompanion } from "./sprout-companion";
 import ThemeToggle from "./theme-toggle";
 import { materializeAvailability, reconcileRecurringAvailability } from '@/lib/calendar-pattern';
+import { roadmapPhaseOnDay } from '@/lib/roadmap';
 import { canonicalProblemKey, mergeWorkspaceStates } from "@/lib/workspace-merge";
 
 type View = "today" | "calendar" | "problems" | "weekly-tasks" | "settings";
@@ -319,6 +320,7 @@ function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, refe
   const meterHue = Math.round(8 + progress * 1.08);
   const meterColor = `hsl(${meterHue} 84% 48%)`;
   const todayKey = dayKey(new Date(referenceNow));
+  const todayRoadmap = roadmapPhaseOnDay(state.roadmapPhases, todayKey);
   const dsaHours = state.slots.filter((slot) => dayKey(new Date(slot.startsAt)) === todayKey && slot.kind === "dsa").length;
   const recallMinutes = todayPlan.reduce((sum, item) => sum + item.minutes, 0);
   const dueSoon = state.problems.filter((problem) => {
@@ -344,6 +346,11 @@ function TodayView({ state, todayPlan, todayMinutes, todayCount, weekCount, refe
         <div className="signal-stats"><span><b>{dsaHours}</b> DSA hours</span><span><b>{recallMinutes}</b> recall min</span><span><b>{dueSoon.length}</b> due soon</span></div>
       </div>
     </section>
+
+    {todayRoadmap && <section className={`today-roadmap panel roadmap-${todayRoadmap.kind}`}>
+      <div><span className="eyebrow">DSA focus today</span><h3>{todayRoadmap.title}</h3><p>{todayRoadmap.topics.join(" · ")}</p>{todayRoadmap.sideTopic && <small>Side topic: {todayRoadmap.sideTopic}</small>}{todayRoadmap.guidance && <small>{todayRoadmap.guidance}</small>}</div>
+      <button className="secondary-button compact" onClick={() => onNavigate("calendar")}>View roadmap <ChevronRight size={15} /></button>
+    </section>}
 
     <div className="today-workbench">
     <section className="today-queue panel">

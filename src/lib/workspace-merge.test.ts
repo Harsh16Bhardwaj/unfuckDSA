@@ -59,4 +59,13 @@ describe("workspace state merge", () => {
     const newer = { ...createInitialState(), deletedProblemKeys: ["leetcode:two-sum"] };
     expect(mergeWorkspaceStates(newer, oldBrowser).problems).toHaveLength(0);
   });
+
+  it("keeps a personal roadmap when an older device saves without it", () => {
+    const phase = { id: "oct-graphs", startsOn: "2026-10-02", endsOn: "2026-10-04", title: "Graph continuation", kind: "focus" as const, topics: ["BFS", "DFS"] };
+    const seeded = { ...createInitialState(), roadmapPhases: [phase], roadmapNotes: ["Keep exam weeks light."] };
+    const staleDevice = createInitialState();
+    const merged = mergeWorkspaceStates(seeded, staleDevice);
+    expect(merged.roadmapPhases).toEqual([phase]);
+    expect(merged.roadmapNotes).toEqual(["Keep exam weeks light."]);
+  });
 });
